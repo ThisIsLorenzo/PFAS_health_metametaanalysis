@@ -1,0 +1,373 @@
+initials_extractor,initials_checker,status,ma_comment,refs_save,ma_id,ma_aut_year,ma_title,ma_journal,ma_doi,programming_language,code_provided,code_link
+KM,,Data extracted,NA,,ma_001,ingber_2013,DDT/DDE and breast cancer: A meta-analysis,Regulatory Toxicology and Pharmacology,10.1016/j.yrtph.2013.08.021,comprehensive meta-analysis software,not reported ,not reported
+KM,,Data extracted,NA,,ma_002,park_2016,Body burden of persistent organic pollutants on hypertension: a meta-analysis,Environmental Science and Pollution Research,10.1007/s11356-016-6568-6,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_003,canosancho_2017,"Association between Exposure to p,p?-DDT and Its Metabolite p,p?-DDE with Obesity: Integrated Systematic Review and Meta-Analysis",Environmental Health Perspectives,10.1289/EHP527,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_004,fu_2020,The association between environmental endocrine disruptors and cardiovascular diseases: A systematic review and meta-analysis,Environmental Research,10.1016/j.envres.2020.109464,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_005,hernandezmariano_2020,Exposure to the pesticide DDT and risk of diabetes and hypertension: Systematic review and meta-analysis of prospective studies,International Journal of Hygiene and Environmental Health,10.1016/j.ijheh.2021.113865,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_006,odutola_2021,A systematic review and meta-analysis of occupational exposures and risk of follicular lymphoma,Environmental Research,10.1016/j.envres.2021.110887,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_007,tang_2014,Exposure to Organochlorine Pollutants and Type 2 Diabetes: A Systematic Review and Meta-Analysis,PLoS one,10.1371/journal.pone.0085556,revman,not reported ,not reported
+KM,,Data extracted,NA,,ma_008,sun_2022,Prenatal exposure to endocrine-disrupting chemicals and thyroid function in neonates: A systematic review and meta-analysis.,Ecotoxicology and Environmental Safety,10.1016/j.ecoenv.2022.113215,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_009,stratakis_2021,Prenatal exposure to persistent organic pollutants and childhood obesity: A systematic review and meta-analysis of human studies.,Obesity reviews,10.1111/obr.13383,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_010,luo_2016,Exposure to organochlorine pesticides and non-Hodgkin lymphoma: a meta-analysis of observational studies.,Scientific reports,10.1038/srep25768,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_011,park_2014,Exposure to Dichlorodiphenyltrichloroethane and the Risk of Breast Cancer: A Systematic Review and Meta-analysis.,Public Health and Research Perspectives ,10.1016/j.phrp.2014.02.001,stata,not reported ,not reported
+KM,,Data extracted,NA,,ma_012,mosallanejad_2016,Association of hexachlorobenzene in the serum and adipose tissue with type 2 diabetes: a systematic review and meta-analysis and meta-regression,International Journal of Medical Research & Health Sciences,unavailable ,comprehensive meta-analysis software,not reported ,not reported
+KM,,Data extracted,NA,,ma_013,brown_2006,Pesticides and Parkinson’s Disease—Is There a Link?,Environmental Health Perspectives,10.1289/ehp.8095,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_014,wu_2022,"Maternal exposure to endocrine disrupting chemicals (EDCs) and preterm birth: A systematic review, meta-analysis, and meta-regression analysis",Environmental Pollution,10.1016/j.envpol.2021.118264,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_015,yipei_2022,Assessing the risk of diabetes in paRTIcipants with DDT DDE exposure- A systematic review and meta-analysis,Environmental Research,10.1016/j.envres.2022.113018,R ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_016,chittrakul_2021,Insecticide Exposure and Risk of Asthmatic Symptoms: A Systematic Review and Meta-Analysis,Toxics,10.3390/toxics9090228,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_017,lim_2015,Body concentrations of persistent organic pollutants and prostate cancer: a meta-analysis,Environmental Science and Pollution Research,10.1007/s11356-015-4315-z,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_018,bonde_2016,The epidemiologic evidence linking prenatal and postnatal exposure to endocrine disrupting chemicals with male reproductive disorders: a systematic review and meta-analysis,Human Reproduction Update,10.1093/humupd/dmw036,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_019,mendes_2021,"The association between environmental exposures to chlordanes, adiposity and diabetes-related features: a systematic review and meta-analysis.",Scientific reports,10.1038/s41598-021-93868-4,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_020,he_2022,Effects of perinatal exposure to endocrine disrupting chemicals on the reproductive system of F3 generation male rodents: a meta analysis,Environmental Science and Pollution Research,10.1007/s11356-021-18338-w,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_021,wang_2021,Maternal Exposure to Pesticides and Risk of Autism Spectrum Disorders in Offspring: A Meta?analysis,Journal of Autism and Developmental Disorders,10.1007/s10803-021-05063-z,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_022,lewis-mikhael_2015,"Organochlorine pesticides and prostate cancer, Is there an association? A meta-analysis of epidemiological evidence",Cancer Causes Control,10.1007/s10552-015-0643-z,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_023,wu_2013,Persistent organic pollutants and type 2 diabetes: a prospective analysis in the nurses' health study and meta-analysis.,Environmental Health Perspectives,10.1289/ehp.1205248,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_024,yang_2020,Metabolomics study and meta-analysis on the association between maternal pesticide exposome and birth outcomes,Environmental Research,10.1016/j.envres.2019.109087,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_025,liu_2022,The associations between endocrine disrupting chemicals and markers of inflammation and immune responses: A systematic review and meta-analysis,Ecotoxicology and Environmental Safety,10.1016/j.ecoenv.2022.113382,comprehensive meta-analysis software,not reported ,not reported 
+KM,,Data extracted,NA,,ma_026,canosancho_2019,Human epidemiological evidence about the associations between exposure to organochlorine chemicals and endometriosis: Systematic review and meta-analysis,Environment International,10.1016/j.envint.2018.11.065,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_027,maelefabry_2012,Occupational exposure to pesticides and Parkinson's disease: A systematic review and meta-analysis of cohort studies,Environment International,10.1016/j.envint.2012.05.004,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_028,jin_2014,"Pesticide Exposure as a Risk Factor for Myelodysplastic Syndromes: A Meta-Analysis Based on 1,942 Cases and 5,359 Controls",PLoS one,10.1371/journal.pone.0110850,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_029,moore_2011,Paternal occupational exposure to pesticides and risk of neuroblastoma among children: a meta-analysis,Cancer Causes Control,10.1007/s10552-011-9829-1,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_030,turner_2010,Residential Pesticides and Childhood Leukemia: A Systematic Review and Meta-Analysis,Environmental Health Perspectives,10.1289/ehp.0900966,revman,not reported ,not reported 
+KM,,Data extracted,NA,,ma_031,karalexi_2021,Exposure to pesticides and childhood leukemia risk: A systematic review and meta-analysis,Environmental Pollution,10.1016/j.envpol.2021.117376,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_032,maelefabry_2013,Parental occupational exposure to pesticides as risk factor for brain tumors in children and young adults: A systematic review and meta-analysis,Environment International,10.1016/j.envint.2013.02.011,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_033,yan_2016,Pesticide exposure and risk of Alzheimer’s disease: a systematic review and meta-analysis,Scientific Reports,10.1038/srep32222,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_034,maelefabry_2019,Household exposure to pesticides and risk of leukemia in children and adolescents: Updated systematic review and meta-analysis,International Journal of Hygiene and Environmental Health,10.1016/j.ijheh.2018.08.004,excel,not reported ,not reported 
+KM,,Data extracted,NA,,ma_035,yan_2018,Pesticide exposure and risk of Parkinson's disease: Dose-response metaanalysis of observational studies,Regulatory Toxicology and Pharmacology,10.1016/j.yrtph.2018.05.005,metaXL,not reported ,not reported 
+KM,,Data extracted,NA,,ma_036,wei_2018,No association between pesticide exposure and pancreatic cancer risk: a meta-analysis,International Journal of Clinical and Experimental Medicine,not reported,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_037,maelefabry_2017,Residential exposure to pesticides as risk factor for childhood and young adult brain tumors: A systematic review and meta-analysis,Environment International,10.1016/j.envint.2017.05.018,excel,not reported ,not reported 
+KM,,Data extracted,NA,,ma_038,wang_2017,Identification of risk factors associated with onset and progression of amyotrophic lateral sclerosis using systematic review and meta-analysis,NeuroToxicology,10.1016/j.neuro.2016.06.015,revman,not reported ,not reported 
+KM,,Data extracted,NA,,ma_039,chen_2015,Residential Exposure to Pesticide During Childhood and Childhood Cancers: A Meta-Analysis,Pediatrics,10.1542/peds.2015-0006,revman,not reported ,not reported 
+KM,,Data extracted,NA,,ma_040,maelefabry_2008,Risk of leukaemia among pesticide manufacturing workers: A review and meta-analysis of cohort studies,Environmental Research ,10.1016/j.envres.2007.09.002,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_041,johnson_2014,The Navigation Guide—evidence-based medicine meets environmental health: systematic review of human evidence for PFOA effects on fetal growth,Environmental health perspectives,10.1289/ehp.1307893.,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_042,liu_2018,Perfluorooctanoic Acid (PFOA) Exposure in Early Life Increases Risk of Childhood Adiposity: A Meta-Analysis of Prospective Cohort Studies,International journal of environmental research and public health,10.3390/ijerph15102070,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_043,cao_2021 ,The relationship between maternal perfluoroalkylated substances exposure and low birth weight of offspring: a systematic review and meta-analysis,Environmental Science and Pollution Research,10.1007/s11356-021-15061-4,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_044,wang_2022,Association between per- and polyfluoroalkyl substances and risk of gestational diabetes mellitus,International Journal of Hygiene and Environmental Health,10.1016/j.ijheh.2021.113904,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_045,gui_2022,Association between exposure to per-and polyfluoroalkyl substances and birth outcomes: a systematic review and meta-analysis,Frontiers in Public Health,10.3389/fpubh.2022.855348,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_046,qu_2021,The association between maternal perfluoroalkyl substances exposure and early attention deficit hyperactivity disorder in children: a systematic review and meta-analysis,Environmental Science and Pollution Research,10.1007/s11356-021-15136-2,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_047,gao_2021,Per- and polyfluoroalkyl substances exposure during pregnancy and adverse pregnancy and birth outcomes: A systematic review and meta-analysis,Environmental Research,10.1016/j.envres.2021.111632,stata ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_048,wang_2021,Male reproductive toxicity of perfluorooctanoate (PFOA): Rodent studies,Chemosphere,10.1016/j.chemosphere.2020.128608,revman,not reported ,not reported 
+KM,,Data extracted,NA,,ma_049,jeddi_2021,To which extent are per-and poly-fluorinated substances associated to metabolic syndrome?,Reviews on Environmental Health,10.1515/reveh-2020-0144,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_050,luo_2020,Exposure to perfluoroalkyl substances and allergic outcomes in children: A systematic review and meta-analysis,Environmental Research,10.1016/j.envres.2020.110145,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_051,dzierlanga_2020,Birth weight and perfluorooctane sulfonic acid: a random-effects meta-regression analysis,Environmental Epidemiology,10.1097/EE9.0000000000000095,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_052,kim_2018,Association between perfluoroalkyl substances exposure and thyroid function in adults: A meta-analysis,PloS one,10.1371/journal.pone.0197244,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_053,verner_2015,Associations of Perfluoroalkyl Substances (PFAS) with Lower Birth Weight: An Evaluation of Potential Confounding by Glomerular Filtration Rate Using a Physiologically Based Pharmacokinetic Model (PBPK),Environmental health perspectives,10.1289/ehp.1408837,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_054,bliatka_2020,The effects of postnatal exposure of endocrine disruptors on testicular function: a systematic review and a meta-analysis,Hormones,10.1007/s42000-019-00170-0,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_055,jiang_2022,Associations between Polyfluoroalkyl Substances Exposure and Breast Cancer: A Meta-Analysis,Toxics,10.3390/toxics10060318,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_056,banyoi_2022,The effects of exposure to environmentally relevant PFAS concentrations for aquatic organisms at different consumer trophic levels: Systematic review and meta-analyses,Environmental Pollution,10.1016/j.envpol.2022.120422,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_057,zhang_2022,Effects of exposure to per-and polyfluoroalkyl substances on vaccine antibodies: A systematic review and meta-analysis based on epidemiological studies,Environmental Pollution,10.1016/j.envpol.2022.119442,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_058,yan_2022,Endocrine-disrupting chemicals and the risk of gestational diabetes mellitus: a systematic review and meta-analysis,Environmental Health,10.1186/s12940-022-00858-8,stata,not reported ,not reported 
+KM,,Data extracted,NA,,ma_059,wang_2022,The effects of perfluoroalkyl and polyfluoroalkyl substances on female fertility: A systematic review and meta-analysis,Environmental Research,10.1016/j.envres.2022.114718,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_060,hirke_2022,Exposure to endocrine-disrupting chemicals and risk of gestational hypertension and preeclampsia: A systematic review and meta-analysis,Environmental Pollution,10.1016/j.envpol.2022.120828,revman,not reported ,not reported 
+KM,,Data extracted,NA,,ma_061,brauner_2021,Endocrine Disrupting Chemicals and Risk of Testicular Cancer: A Systematic Review and Meta-analysis,The Journal of Clinical Endocrinology & Metabolism,10.1210/clinem/dgab523,R,not reported ,not reported 
+KM,,Data extracted,NA,,ma_062,adami_1995,ORGANOCHLORINE COMPOUNDS AND ESTROGEN-RELATED CANCERS IN WOMEN,Cancer Causes Control ,10.1007/BF00054165,not reported ,not reported ,not reported 
+KM,,Data extracted,NA,,ma_063,wang_2016,"The classic EDCs, phthalate esters and organochlorines, in relation to abnormal sperm quality: a systematic review with meta-analysis.",Scientific reports,10.1038/srep19982,stata,not reported ,not reported 
+LR,,NA,EXCLUDE,,ma_064,rosato_2024,Estimation of per- and polyfluoroalkyl substances (PFAS) half-lives in human studies: a systematic review and meta-analysis,ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.117743,R,not reported ,not reported 
+LR,,NA,EXCLUDE,,,timmerman_2023,Per- and Polyfluoroalkyl Substances and Breastfeeding as a Vulnerable Function: A Systematic Review of Epidemiological Studies,TOXICS,10.3390/toxics11040325,not reported,not reported ,not reported 
+LR,,Data extracted,NA,liu_2023a_refs,ma_065,liu_2023a,Endocrine-disrupting chemicals and breast cancer: a meta-analysis,FRONTIERS IN ONCOLOGY,10.3389/fonc.2023.1282651,not reported ,not reported ,not reported 
+LR,,Data extracted,the study also provides several subgroup analyses,xu_2023a_refs,ma_066,xu_2023a,The association of environmental organochlorine pesticides exposure and human semen parameters: a systematic review and meta-analysis,JOURNAL OF PUBLIC HEALTH-HEIDELBERG,10.1007/s10389-023-02007-y,stata,not reported ,not reported 
+LR,,Data extracted,NA,uldbjerg_2022_refs,ma_067,uldbjerg_2022,Prenatal and postnatal exposures to endocrine disrupting chemicals and timing of pubertal onset in girls and boys: a systematic review and meta-analysis,Human Reproduction Update,10.1093/humupd/dmac013,R,not reported ,not reported 
+,,NA,EXCLUDE,,ma_068,vendl_2022,Thermal processing reduces PFAS concentrations in blue food â€“ A systematic review and meta-analysis,Environmental Pollution,,,,
+LR,,Data extracted,NA,wang_2021_refs,ma_069,wang_2021,Maternal Exposure to Pesticides and Risk of Autism Spectrum Disorders in Offspring: A Meta-analysis,Journal of Autism and Developmental Disorders,10.1007/s10803-021-05063-z,stata,not reported ,not reported 
+LR,,Data extracted,the study also provides some subgroup analyses,lan_2023a_refs,ma_070,lan_2023a,Association between exposure to persistent organic pollutants and pubertal timing in boys and girls: A systematic review and meta-analysis,ECOTOXICOLOGY AND ENVIRONMENTAL SAFETY,10.1016/j.ecoenv.2023.115540,stata,not reported ,not reported 
+LR,,Data extracted,NA,cartagena_2023_refs,ma_071,cartagena_2023,The role of environmental pollutants in body composition: Systematic review and meta-analysis,ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.115840,metaXL,not reported ,not reported 
+LR,,Data extracted,they study provides some subcategory analyses but not at the chemical or health outcome level,wu_2023_refs,ma_072,wu_2023,Suicide and suicidality in people exposed to pesticides: A systematic review and meta-analysis{*},ENVIRONMENTAL POLLUTION,10.1016/j.envpol.2023.121542,stata and excel,not reported ,not reported 
+LR,,Data extracted,NA,sirikul_2023_refs,ma_073,sirikul_2023,Exposure to pesticides and the risk of hypothyroidism: a systematic review and meta-analysis,BMC PUBLIC HEALTH,10.1186/s12889-023-16721-5,stata,not reported ,not reported 
+,,NA,EXCLUDE. I cannot find the full text,,ma_074,kouiti_2023,PERSISTENT ORGANIC POLLUTANT EXPOSURE AND GESTATIONAL DIABETES: A SYSTEMATIC REVIEW AND META-ANALYSIS,GACETA SANITARIA,,,,
+LR,,Data extracted,NA,lin_2023_refs,ma_075,lin_2023,Maternal pesticide exposure and risk of preterm birth: A systematic review and meta-analysis,ENVIRONMENT INTERNATIONAL,10.1016/j.envint.2023.108043,R,not reported ,not reported 
+LR,,Data extracted,NA,liu_2023b_refs,ma_076,liu_2023b,Associations between Per- and Polyfluoroalkyl Substances Exposures and Blood Lipid Levels among Adults-A Meta-Analysis,ENVIRONMENTAL HEALTH PERSPECTIVES,10.1289/EHP11840,stata and R,not reported ,not reported 
+LR,,Data extracted,NA,shillemans_2023_refs,ma_077,shillemans_2023,Cross-sectional associations between exposure to per- and polyfluoroalkyl substances and body mass index among European teenagers in the HBM4EU aligned studies,ENVIRONMENTAL POLLUTION,10.1016/j.envpol.2022.120566,stata,not reported ,not reported 
+LR,,Data extracted,NA,yang_2023_refs,ma_078,yang_2023,The Association of Hypertension with Perfluoroalkyl and Polyfluoroalkyl Substances,INTERNATIONAL HEART JOURNAL,10.1536/ihj.23-036,stata,not reported ,not reported 
+LR,,Data extracted,NA,hirke_2023_refs,ma_079,hirke_2023,Exposure to endocrine-disrupting chemicals and risk of gestational hypertension and preeclampsia: A systematic review and meta-analysis{*},ENVIRONMENTAL POLLUTION,10.1016/j.envpol.2022.120828,not reported ,not reported ,not reported 
+LR,,Data extracted,NA,pan_2023_refs,ma_080,pan_2023,The relationship between perfluoroalkyl substances and hypertension: A systematic review and meta-analysis,ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.116362,stata,not reported ,not reported 
+LR,,Data extracted,NA,crawford_2023_refs,ma_081,crawford_2023,Systematic review and meta-analysis of epidemiologic data on vaccine response in relation to exposure to five principal perfluoroalkyl substances,ENVIRONMENT INTERNATIONAL,10.1016/j.envint.2023.107734,R,not reported ,not reported 
+LR,,Data extracted,NA,yipei_2023_refs,ma_082,yipei_2023,Assessing the health risk of hyperuricemia in participants with persistent organic pollutants exposure-a systematic review and meta-analysis,ECOTOXICOLOGY AND ENVIRONMENTAL SAFETY,10.1016/j.ecoenv.2023.114525,R,not reported ,not reported 
+LR,,Data extracted,NA,lan_2023b_refs,ma_083,lan_2023b,Associations between maternal exposure to perfluoroalkylated substances (PFASs) and infant birth weight: a meta-analysis,ENVIRONMENTAL SCIENCE AND POLLUTION RESEARCH,10.1007/s11356-023-28458-0,stata,not reported ,not reported 
+LR,,Data extracted,NA,sang_2024_refs,ma_084,sang_2024,Association between per- and polyfluoroalkyl substances and sex hormone levels in males based on human studies,ECOTOXICOLOGY AND ENVIRONMENTAL SAFETY,10.1016/j.ecoenv.2024.115998,stata,not reported ,not reported 
+LR,,Data extracted,NA,liu_2024a_refs,ma_085,liu_2024a,Association of prenatal exposure to perfluorinated and polyfluoroalkyl substances with childhood neurodevelopment: A systematic review and meta-analysis,ECOTOXICOLOGY AND ENVIRONMENTAL SAFETY,10.1016/j.ecoenv.2024.115939,stata,not reported ,not reported 
+LR,,Data extracted,NA,frigerio_2023_refs,ma_086,frigerio_2023,Prenatal and childhood exposure to per-/polyfluoroalkyl substances (PFASs) and its associations with childhood overweight and/or obesity: a systematic review with meta-analyses,ENVIRONMENTAL HEALTH,10.1186/s12940-023-01006-6,R,not reported ,not reported 
+LR,,Data extracted,NA,dunder_2023_refs,ma_087,dunder_2023,Plasma levels of per- and polyfluoroalkyl substances (PFAS) and cardiovascular disease - Results from two independent population-based cohorts and a meta-analysis,ENVIRONMENT INTERNATIONAL,10.1016/j.envint.2023.108250,stata,not reported ,not reported 
+LR,,Data extracted,NA,yang_2024_refs,ma_088,yang_2024,Perfluoroalkyl and polyfluoroalkyl substances and Cancer risk: results from a does-response Meta-analysis,JOURNAL OF ENVIRONMENTAL HEALTH SCIENCE AND ENGINEERING,10.1007/s40201-024-00899-w,stata,not reported ,not reported 
+LR,,Data extracted,NA,cong_2023_refs,ma_089,cong_2023,"Systematic review and meta-analysis of breast cancer risks in relation to 2,3,7,8-tetrachlorodibenzo-p-dioxin and per- and polyfluoroalkyl substances",ENVIRONMENTAL SCIENCE AND POLLUTION RESEARCH,10.1007/s11356-023-28592-9,stata,not reported ,not reported 
+LR,,Data extracted,NA,xiao_2023_refs,ma_090,xiao_2023,Association between per- and polyfluoroalkyl substances and risk of hypertension: a systematic review and meta-analysis,FRONTIERS IN PUBLIC HEALTH,10.3389/fpubh.2023.1173101,stata,not reported ,not reported 
+LR,,Data extracted,we need to check supplements for primary studies,li_2024_refs,ma_091,li_2024,Association between exposure to per- and perfluoroalkyl substances (PFAS) and reproductive hormones in human: A systematic review and meta-analysis,ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.117553,stata,not reported ,not reported 
+LR,,Data extracted,NA,liu_2024b_refs,ma_092,liu_2024b,Influence of maternal endocrine disrupting chemicals exposure on adverse pregnancy outcomes: A systematic review and meta-analysis,ECOTOXICOLOGY AND ENVIRONMENTAL SAFETY,10.1016/j.ecoenv.2023.115851,stata,not reported ,not reported 
+LR,,Data extracted,NA,wright_2023_refs,ma_093,wright_2023,Systematic review and meta-analysis of birth weight and PFNA exposures,ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.115357,R,not reported ,not reported 
+LR,,Data extracted,NA,chen_2023_refs,ma_094,chen_2023,"Associations of per- and polyfluoroalkyl substances, polychlorinated biphenyls, organochlorine pesticides, and polybrominated diphenyl ethers with oxidative stress markers: A systematic review and meta-analysis",ENVIRONMENTAL RESEARCH,10.1016/j.envres.2023.117308,not reported ,not reported ,not reported 
+LR,,Data extracted,It also provides subgroup analysis (children/adolescents and male/female),zheng_2024_refs,ma_095,zheng_2024,The effect of PFAS exposure on glucolipid metabolism in children and adolescents: a meta-analysis,FRONTIERS IN ENDOCRINOLOGY,10.3389/fendo.2024.1261008,stata,not reported ,not reported 
+LR,,Data extracted,NA,seyyedsalehi_2023_refs,ma_096,seyyedsalehi_2023,"Per- and Poly-fluoroalkyl Substances (PFAS) Exposure and Risk of Kidney, Liver, and Testicular Cancers: A Systematic Review and Meta-Analysis",MEDICINA DEL LAVORO,10.23749/mdl.v114i5.15065,stata,not reported ,not reported 
+LR,,Data extracted,NA,frangione_2023_refs,ma_097,frangione_2023,Exposure to perfluoroalkyl and polyfluoroalkyl substances and pediatric obesity: a systematic review and meta-analysis,INTERNATIONAL JOURNAL OF OBESITY,10.1038/s41366-023-01401-6,stata,not reported ,not reported 
+LR,,Data extracted,NA,mahdavi_2023_refs,ma_098,mahdavi_2023,Exposure to Environmental Chemicals and Human Bone Health; A Systematic Review and Meta-Analysis,EXPOSURE AND HEALTH,10.1007/s12403-023-00596-3,stata,not reported ,not reported 
+LR,,Data extracted,NA,maradpour_2021_refs,ma_099,maradpour_2021,The Risk of Exposure To Pesticides on Autism Disorder: a Systematic Review and Meta-analysis,Journal of Chemical Health Risks,10.22034/jchr.2021.1935357.1355,stata,not reported ,not reported 
+LR,,Data extracted,NA,khosrojerdi_2024_refs,ma_100,khosrojerdi_2024,Exposure to per- and polyfluoroalkyl substances and bone health: a systematic review and meta-analysis.,International journal of environmental health research,10.1080/09603123.2024.2338269,stata,not reported ,not reported 
+LR,,Data extracted,NA,chang_2024_refs,ma_101,chang_2024,Exposure to Per- and Polyfluoroalkyl Substances and Breast Cancer Risk: A Systematic Review and Meta-analysis of Epidemiologic Studies.,American journal of epidemiology,10.1093/aje/kwae010,R,not reported ,not reported 
+LR,,Data extracted,they also provide subcategory maternal age (< or > 30),xu_2023b_refs,ma_102,xu_2023b,Maternal exposure to pesticides and autism or attention-deficit/hyperactivity disorders in offspring: A meta-analysis,CHEMOSPHERE,10.1016/j.chemosphere.2022.137459,stata and R,not reported ,not reported 
+LR,,Data extracted,NA,yao_2023_refs,ma_103,yao_2023,The Association between Prenatal Per- and Polyfluoroalkyl Substances Exposure and Neurobehavioral Problems in Offspring: A Meta-Analysis,International Journal of Environmental Research and Public Health,10.3390/ijerph20031668,stata,not reported ,not reported 
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,
+,,,,,,,,,,,,

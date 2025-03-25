@@ -1,0 +1,337 @@
+---
+title: "Analysis Code"
+author: "Lorenzo Ricolfi"
+output:
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_float: yes
+    toc_collapsed: yes
+    toc_depth: 3
+    number_sections: no
+    theme: cerulean
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+The following packages are required to run the code in this script.
+```{r, echo=TRUE, results='hide', warning=FALSE, message=FALSE}
+#devtools::install_github("EIvimeyCook/ShinyDigitise")
+#library(shinyDigitise)
+pacman::p_load(tidyr,       # For tidying data, including reshaping and separating data into columns.
+               dplyr,       # For data manipulation, including filtering, selecting, and summarizing data.
+               here,        # For constructing file paths relative to the root of the project directory.
+               ggplot2,     # For creating complex and customizable visualizations using the grammar of graphics.
+               gridExtra,
+               metafor,
+               orchaRd
+               )       
+```
+
+```{r}
+ma_details <- read.csv(here("data/ma_details.csv"))
+ma_e_details <- read.csv(here("data/ma_e_details.csv"))
+```
+
+# Data wrangling and cleaning
+```{r}
+ma_e_details <- ma_e_details %>%
+  filter(chemical_class == "PFAS") %>%
+  filter(!is.na(health_outcome_type)) %>%
+  mutate(ma_es_measure = recode(
+    ma_es_measure,
+    "? (regression coefficient) value" = "Beta (regression coefficient) value",
+    "beta (regression coefficient) value" = "Beta (regression coefficient) value",
+    "Adjusted ? (regression coefficient)" = "Beta (regression coefficient) value",
+    "adjusted coefficient regression (?)" = "Beta (regression coefficient) value",
+    "relative risk" = "Risk ratio",
+    "RR (risk ratio)" = "Risk ratio",
+    "OR (odds ratio)" = "Odds ratio",
+    "fishers z" = "Fisher's Z",
+    "log OR (odds ratio)" = "log Odds ratio")) %>% 
+  mutate(chemical_id = recode(
+    chemical_id,
+    "n-PFOA" = "PFOA",
+    "n-PFOS" = "PFOS",
+    "PFHsX" = "PFHxS"))
+```
+
+# Exploratory analyses
+## Effect size types
+```{r}
+es_count <- ma_e_details %>% 
+  filter(!is.na(ma_es_measure) & ma_es_measure != "") %>%
+  group_by(ma_es_measure) %>%
+  summarise(n_meta_analyses = n_distinct(ma_id),
+            n_estimates = n(), 
+            n_chemical_groups = n_distinct(chemical_class),
+            n_health_outcomes = n_distinct(health_outcome_type),
+            n_health_groups = n_distinct(health_outcome_group),
+            n_non_na_point_estimates = sum(!is.na(ma_point_estimate))) %>%
+  arrange(desc(n_meta_analyses)) %>% 
+  head(20)
+# Convert the table to a grid for plotting
+es_table <- tableGrob(es_count)
+# Save the table as an image
+ggsave(here("figs/exploratory_analysis/es_table.png"), es_table, width = 17, height = 7)
+```
+
+## Chemical ID
+```{r}
+# Count the number of occurrences of each chemical_id
+chemical_count <- ma_e_details %>%
+  filter(!is.na(chemical_id) & chemical_id != "") %>% 
+  group_by(chemical_id) %>%
+  summarise(n_meta_analyses = n_distinct(ma_id),
+            n_health_outcomes = n_distinct(health_outcome_type),
+            n_health_outcome_group = n_distinct(health_outcome_group),
+            n_non_na_point_estimates = sum(!is.na(ma_point_estimate))) %>%
+  arrange(desc(n_meta_analyses)) %>%
+  head(20)
+# Convert the table to a grid for plotting
+chem_table <- tableGrob(chemical_count)
+# Save the table as an image
+ggsave(here("figs/exploratory_analysis/chemicals_table.png"), chem_table, width = 11, height = 7)
+```
+
+## Health outcomes
+
+```{r}
+# Fix encoding issues in health_outcome_type
+ma_e_details$health_outcome_type <- iconv(ma_e_details$health_outcome_type, from = "UTF-8", to = "UTF-8", sub = "")
+
+# Count the number of occurrences of each health_outcome_type
+outcome_type_table <- ma_e_details %>%
+  filter(!is.na(health_outcome_type) & health_outcome_type != "") %>% 
+  group_by(health_outcome_type) %>%
+  summarise(n_meta_analyses = n_distinct(ma_id),
+            n_health_outcomes = n_distinct(health_outcome_type),
+            n_non_na_point_estimates = sum(!is.na(ma_point_estimate)),
+            n_non_na_point_estimates = sum(!is.na(ma_point_estimate))) %>%
+  arrange(desc(n_meta_analyses)) %>%
+  head(20)
+
+# Convert the table to a grid for plotting
+ho_table <- tableGrob(outcome_type_table)
+
+# Save the table as an image
+ggsave(here("figs/exploratory_analysis/health_outcome_type_table.png"), ho_table, width = 11, height = 6)
+```
+## Health outcome group
+```{r}
+# Count the number of occurrences of each health_outcome_info
+outcome_group_table <- ma_e_details %>%
+  filter(!is.na(health_outcome_group) & health_outcome_group != "") %>% 
+  group_by(health_outcome_group) %>%
+  summarise(n_meta_analyses = n_distinct(ma_id),
+            n_health_outcome_types = n_distinct(health_outcome_type),
+            n_non_na_point_estimates = sum(!is.na(ma_point_estimate))) %>%
+  arrange(desc(n_meta_analyses)) %>%
+  head(8)
+
+# Convert the table to a grid for plotting
+ho_group_table <- tableGrob(outcome_group_table)
+
+# Save the table as an image
+ggsave(here("figs/exploratory_analysis/health_outcome_group_table.png"), ho_group_table, width = 1, height = 5)
+```
+
+# Effect size conversion
+
+See: Borenstein, M., Hedges, L. V., Higgins, J. P., & Rothstein, H. R. (2021). Introduction to meta-analysis. John wiley & sons.
+
+```{r}
+# Define a conversion function with an optional baseline risk parameter
+convert_to_logOR <- function(effect_measure, point_estimate, ma_l_ci, ma_u_ci, regression_type = NA, baseline_risk = NA) {
+  # Ensure the effect measure is treated as character
+  effect_measure <- as.character(effect_measure)
+  
+  # Ensure point estimate, lower CI, and upper CI are numeric
+  point_estimate <- suppressWarnings(as.numeric(as.character(point_estimate)))
+  ma_l_ci <- suppressWarnings(as.numeric(as.character(ma_l_ci)))
+  ma_u_ci <- suppressWarnings(as.numeric(as.character(ma_u_ci)))
+  
+  # Handle cases where point_estimate, ma_l_ci, or ma_u_ci cannot be converted to numeric
+  if (any(is.na(c(point_estimate, ma_l_ci, ma_u_ci)))) {
+    warning("Non-numeric values encountered for effect measure: ", effect_measure)
+    return(rep(NA, 3))  # Return NA for all three (point estimate, lower, and upper CI)
+  }
+  
+  # Conversion for Odds ratio and log Odds ratio
+  if (effect_measure == "Odds ratio") {
+    # Convert OR to logOR
+    return(c(log(point_estimate), log(ma_l_ci), log(ma_u_ci)))
+    
+  } else if (effect_measure == "log Odds ratio") {
+    # Already in logOR
+    return(c(point_estimate, ma_l_ci, ma_u_ci))
+    
+    # Conversion for SMD (standardized mean difference)
+  } else if (effect_measure == "SMD (standardized mean difference)") {
+    # Following Borenstein et al. (2021): logOR = SMD * pi/sqrt(3)
+    logOR_point_estimate <- point_estimate * (pi / sqrt(3))
+  
+    # Convert lower and upper confidence intervals using the same logic
+    logOR_l_ci <- ma_l_ci * (pi / sqrt(3))
+    logOR_u_ci <- ma_u_ci * (pi / sqrt(3))
+  
+    return(c(logOR_point_estimate, logOR_l_ci, logOR_u_ci))
+
+    # Conversion for Relative risk / Risk ratio with optional baseline risk
+  } else if (effect_measure %in% c("Relative risk", "Risk ratio")) {
+    if (!is.na(baseline_risk)) {
+      # Using the conversion: OR = RR * (1-p0) / (1-RR*p0)
+      OR <- point_estimate * (1 - baseline_risk) / (1 - point_estimate * baseline_risk)
+      OR_l_ci <- ma_l_ci * (1 - baseline_risk) / (1 - ma_l_ci * baseline_risk)
+      OR_u_ci <- ma_u_ci * (1 - baseline_risk) / (1 - ma_u_ci * baseline_risk)
+      return(c(log(OR), log(OR_l_ci), log(OR_u_ci)))
+    } else {
+      # If no baseline risk is provided, fallback to the approximation:
+      return(c(log(point_estimate), log(ma_l_ci), log(ma_u_ci)))
+    }
+    
+    # Conversion for regression coefficients assumed from logistic regression:
+  } else if (effect_measure %in% c("Beta (regression coefficient) value")) {
+    # Check if regression_type is 'logistic'
+    if (!is.na(regression_type) && regression_type == "logistic") {
+        return(c(point_estimate, ma_l_ci, ma_u_ci))
+    } else {
+        return(rep(NA, 3)) # Not logistic regression, cannot convert
+    }
+} else {
+    warning("Effect measure conversion not implemented for: ", effect_measure)
+    return(rep(NA, 3)) # Return NA for all three
+  }
+}
+```
+
+# Effect size calculation
+```{r}
+# Apply conversion to each row
+ma_e_details <- ma_e_details %>%
+  rowwise() %>%
+  mutate(
+    logOR = convert_to_logOR(ma_es_measure, ma_point_estimate, ma_l_ci, ma_u_ci, regression_type, baseline_risk = 0.1)[1],
+    l_ci_logOR = convert_to_logOR(ma_es_measure, ma_point_estimate, ma_l_ci, ma_u_ci, regression_type, baseline_risk = 0.1)[2],
+    u_ci_logOR = convert_to_logOR(ma_es_measure, ma_point_estimate, ma_l_ci, ma_u_ci, regression_type, baseline_risk = 0.1)[3]
+  ) %>%
+  ungroup()
+```
+# Forest plot
+```{r}
+# Create estimate numbering within studies
+ma_e_details_processed <- ma_e_details %>%
+  group_by(ma_id) %>%
+  mutate(estimate_num = row_number()) %>%  # Number estimates within each study
+  ungroup() %>%
+  filter(!is.na(logOR)) %>%
+  mutate(
+    study_label = paste0(ma_id, " (Est. ", estimate_num, ")"),
+    study_label = fct_reorder(study_label, logOR)  # Order by effect size
+  )
+
+# Create forest plot with study grouping
+forest_plot <- ggplot(ma_e_details_processed, 
+                      aes(x = logOR, 
+                          y = study_label)) +
+  geom_point(shape = 18, size = 3) +
+  geom_errorbarh(aes(xmin = l_ci_logOR, 
+                     xmax = u_ci_logOR),
+                 height = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "log Odds Ratio", 
+       y = "Study & Estimate Number",
+       title = "Forest Plot of Effect Size Estimates",
+       subtitle = "Grouped by study with multiple estimates numbered") +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8, hjust = 0),
+    panel.grid.major.y = element_blank(),
+    plot.margin = margin(1, 1, 1, 2, "cm")
+  )
+
+print(forest_plot)
+```
+
+# Model
+```{r}
+# Calculating effect size variances
+ma_e_details <- ma_e_details %>%
+  mutate(
+    se = ((u_ci_logOR - l_ci_logOR)/(2*1.96))  # Convert 95% CI to standard error
+  )
+
+# Fitting the multilevel meta-analysis model
+mod <- rma.mv(yi = logOR,  # Effect size
+              V = se^2, # Variance
+              random = list(~1|ma_id, # Meta-analysis identity
+                            ~1|ma_e_id), # Meta-analytic estimate identity
+              sparse = TRUE,
+              data = ma_e_details)
+
+# Display model results
+summary(mod)
+# Total variance
+tot_var <- sum(mod$sigma2)
+# Between-study variance (tau^2_study)
+mod$sigma2[1]
+# Within-study variance (tau^2_effect)
+mod$sigma2[2]
+# Proportion of variance at each level
+i2_study <- (mod$sigma2[1]/tot_var) * 100
+i2_effect <- (mod$sigma2[2]/tot_var) * 100
+cat("I² (between studies):", round(i2_study, 1), "%\n")
+cat("I² (within studies):", round(i2_effect, 1), "%\n")
+```
+# OrchaRd
+```{r}
+# Create orchard plot with your specifications
+orchard_plot <- orchard_plot(
+  object = mod,
+  group = "ma_id", 
+  xlab = "log Odds Ratio",
+  trunk.size = 1.5,
+  branch.size = 2.7,
+  twig.size = 0.4,
+  alpha = 0.6,
+  transfm = "none",  # Keep logOR scale (use "exp" for Odds Ratios)
+  k.pos = "left",
+  colour = FALSE,
+  fill = FALSE
+) +
+  # Add I² annotation
+  annotate(
+    geom = "text",
+    x = Inf, 
+    y = Inf,
+    label = paste0("italic(I)^2 == ", round(i2_study, 1), "~'%'"),
+    hjust = 1.1,
+    vjust = 1.5,
+    size = 6,
+    parse = TRUE
+  ) +
+  # Custom theme elements
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA, size = 1.3),
+    plot.title = element_text(face = "bold", size = 18),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 17)
+  ) +
+  scale_y_continuous(limits = c(0, 0.25), breaks = seq(0, 0.25, by = 0.05)) +
+  ggtitle("") +
+  xlab("log Odds Ratio") +
+  ylab("")
+
+# Display the plot
+print(orchard_plot)
+```
+
