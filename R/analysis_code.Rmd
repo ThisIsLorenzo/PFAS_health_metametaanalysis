@@ -84,7 +84,7 @@ es_table <- tableGrob(es_count)
 
 ```{r, eval=FALSE}
 # Save the table as an image
-ggsave(here("figs/exploratory_analysis/es_table.png"), es_table, width = 17, height = 7)
+ggsave(here("figs/exploratory_analysis/es_table.png"), es_table, width = 12, height = 7)
 ```
 
 ## Chemical ID
@@ -205,9 +205,9 @@ convert_to_logOR <- function(effect_measure, point_estimate, ma_l_ci, ma_u_ci, r
     
     # Conversion for Fisher's z (often used for correlations)
   } else if (grepl("fishers z", effect_measure, ignore.case = TRUE)) {
-    # One possible approach: convert z to correlation, then to logOR.
+    # Convert z to correlation, then to logOR.
     # r = tanh(z)
-    # A common approximation: logOR = r * pi/sqrt(3)
+    # Approximation: logOR = r * pi/sqrt(3)
     r <- tanh(point_estimate)
     return(r * (pi / sqrt(3)))
     
@@ -245,10 +245,10 @@ ma_e_details <- ma_e_details %>%
 
 # Model
 ```{r}
-# Calculating effect size variances
+# Calculating effect size standard errors
+# SE = (Upper bound – Lower bound) / (2 × 1.96)
 ma_e_details <- ma_e_details %>%
-  mutate(se = ((u_ci_logOR - l_ci_logOR)/(2*1.96))  # Convert 95% CI to standard error (se)
-  )
+  mutate(se = ((u_ci_logOR - l_ci_logOR)/(2*1.96)))  # Convert 95% CI to standard error (se)
 
 # Fitting the multilevel meta-analytic model
 mod <- rma.mv(yi = logOR,  # Effect size
@@ -271,6 +271,14 @@ i2_effect <- (mod$sigma2[2]/tot_var) * 100
 cat("I² (between studies):", round(i2_study, 1), "%\n")
 cat("I² (within studies):", round(i2_effect, 1), "%\n")
 ```
+
+```{r}
+i2_results <- i2_ml(mod)
+# Print I² values
+cat("I² (between studies):", round(i2_results["I2_ma_id"], 1), "%\n")
+cat("I² (within studies):", round(i2_results["I2_ma_e_id"], 1), "%\n")
+```
+
 
 # Forest plot
 ```{r}
