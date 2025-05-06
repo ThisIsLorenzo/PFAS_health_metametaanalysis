@@ -31,7 +31,8 @@ pacman::p_load(tidyr,
                ggplot2,
                gridExtra,
                metafor,
-               orchaRd
+               orchaRd,
+               stringr
                )       
 ```
 
@@ -45,7 +46,8 @@ ma_e_details <- read.csv(here("data/ma_e_details.csv"))
 ma_e_details <- ma_e_details %>%
   filter(chemical_class == "PFAS", 
          !is.na(health_outcome_type),
-         ma_es_measure != "unclear") %>%
+         ma_es_measure != "unclear",
+         !ma_id %in% c("ma_048", "ma_056", "ma_064")) %>%
   mutate(ma_es_measure = recode(
     ma_es_measure,
     "? (regression coefficient) value" = "Beta (regression coefficient) value",
@@ -243,7 +245,8 @@ ma_e_details <- ma_e_details %>%
   filter(!is.na(logOR))
 ```
 
-# Model
+# First Research Question
+## Overall Model
 ```{r}
 # Calculating effect size standard errors
 # SE = (Upper bound – Lower bound) / (2 × 1.96)
@@ -259,33 +262,27 @@ mod <- rma.mv(yi = logOR,  # Effect size
 
 # Display model results
 summary(mod)
-# Total variance
-tot_var <- sum(mod$sigma2)
-# Between-study variance (tau^2_study)
-mod$sigma2[1]
-# Within-study variance (tau^2_effect)
-mod$sigma2[2]
-# Proportion of variance at each level
-i2_study <- (mod$sigma2[1]/tot_var) * 100
-i2_effect <- (mod$sigma2[2]/tot_var) * 100
-cat("I² (between studies):", round(i2_study, 1), "%\n")
-cat("I² (within studies):", round(i2_effect, 1), "%\n")
-```
-
-```{r}
+# I²
 i2_results <- i2_ml(mod)
+print(i2_results)
 # Print I² values
 cat("I² (between studies):", round(i2_results["I2_ma_id"], 1), "%\n")
 cat("I² (within studies):", round(i2_results["I2_ma_e_id"], 1), "%\n")
 ```
 
+## Forest plot
+```{r, eval=FALSE}
+ma_e_details$ma_e_id <- factor(ma_e_details$ma_e_id) 
+# Reorder ma_e_id levels by logOR (descending), excluding "Overall"
+ma_e_details$ma_e_id <- factor(
+  ma_e_details$ma_e_id,
+  levels = c(
+    levels(ma_e_details$ma_e_id)[order(ma_e_details$logOR, decreasing = TRUE)],
+    "Overall"  # Ensure "Overall" is last
+  )
+)
 
-# Forest plot
-```{r}
-ma_e_details$ma_id <- factor(ma_e_details$ma_id, 
-                            levels = c(levels(ma_e_details$ma_id), "Overall"))
-
-ggplot(ma_e_details, aes(x = logOR, y = ma_id)) +
+ggplot(ma_e_details, aes(x = logOR, y = ma_e_id)) +
   geom_point(shape = 18, size = 4) +  # Point estimates
   geom_errorbarh(aes(xmin = l_ci_logOR, xmax = u_ci_logOR), 
                  height = 0.2) +      # Confidence intervals
@@ -293,11 +290,11 @@ ggplot(ma_e_details, aes(x = logOR, y = ma_id)) +
              linetype = "dashed", 
              color = "red") +
   geom_point(data = data.frame(logOR = mod$b[1], 
-                              ma_id = "Overall",
+                              ma_e_id = "Overall",
                               l_ci_logOR = mod$ci.lb,
                               u_ci_logOR = mod$ci.ub),
              shape = 23, size = 4, fill = "red") +
-  geom_errorbarh(data = data.frame(logOR = mod$b[1], ma_id = "Overall"),
+  geom_errorbarh(data = data.frame(logOR = mod$b[1], ma_e_id = "Overall"),
                  aes(xmin = mod$ci.lb, xmax = mod$ci.ub),
                  height = 0.3, size = 1) +
   labs(x = "log Odds Ratio", 
@@ -308,13 +305,52 @@ ggplot(ma_e_details, aes(x = logOR, y = ma_id)) +
   scale_y_discrete(limits = rev)
 ```
 
-# OrchaRd
+More elaborated forest plot:
+```{r, eval=FALSE}
+# Step 1 & 2: Get first point for each ma_id
+labels_df <- ma_e_details %>%
+    group_by(ma_id) %>%
+    slice(1) %>%
+    ungroup()
+
+# Step 3: Add geom_text to your plot
+ggplot(ma_e_details, aes(x = logOR, y = ma_e_id, color = ma_id)) +
+    geom_point(shape = 18, size = 4) +
+    geom_errorbarh(aes(xmin = l_ci_logOR, xmax = u_ci_logOR), height = 0.2) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+    geom_point(data = data.frame(logOR = mod$b[1], 
+                                 ma_e_id = "Overall",
+                                 l_ci_logOR = mod$ci.lb,
+                                 u_ci_logOR = mod$ci.ub),
+               aes(x = logOR, y = ma_e_id),  # explicitly declare aes
+               shape = 23, size = 4, fill = "red", color = "black", inherit.aes = FALSE) +
+    geom_errorbarh(data = data.frame(logOR = mod$b[1], ma_e_id = "Overall"),
+                   aes(xmin = mod$ci.lb, xmax = mod$ci.ub, y = ma_e_id),
+                   height = 0.3, size = 1, inherit.aes = FALSE) +
+    # geom_text for labels
+    geom_text(data = labels_df,
+              aes(x = 1, y = ma_e_id, label = ma_id),  # fixed x value
+              hjust = 0,  # left-aligned
+              size = 3,
+              inherit.aes = FALSE) +
+    labs(x = "log Odds Ratio", 
+         y = "Meta-analysis",
+         title = "Forest Plot of Effect Sizes",
+         color = "Meta-analysis ID") +
+    theme_minimal() +
+    theme(panel.grid.major.y = element_blank()) +
+  scale_y_discrete(limits = rev(levels(factor(ma_e_details$ma_e_id))))
+```
+
+## OrchaRd
 ```{r}
-# Create orchard plot with your specifications
+# Create orchard plot
 orchard_plot <- orchard_plot(
   object = mod,
-  group = "ma_id",
+  mod = "1",
+  group = "ma_es_measure",
   xlab = "log Odds Ratio",
+  colour  = TRUE,
   transfm = "none"
 ) + 
   theme(
@@ -325,9 +361,101 @@ orchard_plot <- orchard_plot(
 # Display the plot
 print(orchard_plot)
 ```
+
+
+```{r, eval=FALSE}
+extreme_logOR <- ma_e_details %>% filter(logOR < -0.5 | logOR > 0.5)
+zero_logOR <- ma_e_details %>% filter(logOR == 0)
+```
+
+# Impact of effect size metric
+
 ```{r}
-orchard_plot2 <- orchard_plot(
-  object = mod,
+ma_e_details$ma_es_measure <- as.factor(ma_e_details$ma_es_measure)
+ma_e_details$ma_es_measure <- relevel(ma_e_details$ma_es_measure, ref = "Odds ratio")
+
+ma_e_details <- ma_e_details %>%
+  mutate(ma_es_measure = recode(
+    ma_es_measure,
+    "Beta (regression coefficient) value" = "Beta",
+    "SMD (standardized mean difference)" = "SMD"))
+
+mod_test <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              mods = ~ ma_es_measure - 1,
+              data = ma_e_details)
+
+# Display model results
+summary(mod_test)
+
+orchard_plot(
+  object = mod_test,
+  mod = "ma_es_measure",
+  group = "ma_id",
+  xlab = "log Odds Ratio",
+  colour  = FALSE,
+  transfm = "none"
+) + 
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA, size = 1.3),
+    axis.text.x = element_text(size = 10)
+  )
+```
+
+The models showed that our strategy for transformation of effect size metrics into logOR had a significant impact on the overall result.
+
+```{r, eval=FALSE}
+ma_e_details_try <- ma_e_details %>% 
+  filter(ma_es_measure != "SMD (standardized mean difference)")
+
+mod_try <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              data = ma_e_details_try)
+
+summary(mod_try)
+
+orchard_plot(
+  object = mod_try,
+  group = "ma_id",
+  xlab = "log Odds Ratio",
+  colour  = FALSE,
+  transfm = "none"
+) + 
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA, size = 1.3),
+    axis.text.x = element_text(size = 10)
+  )
+```
+
+## Excluding transformations
+
+Let's reduce our data set to original effect sizes on the Odds Ratio or log Odds Ratio metrics.
+
+```{r}
+ma_e_details_no_transf <- ma_e_details %>% 
+  filter(ma_es_measure %in% c("Odds ratio", "log Odds ratio") )
+
+mod_no_transf <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              data = ma_e_details_no_transf)
+
+# Display model results
+summary(mod_no_transf)
+# I²
+i2_results_no_transf <- i2_ml(mod_no_transf)
+print(i2_results_no_transf)
+# Print I² values
+cat("I² (between studies):", round(i2_results_no_transf["I2_ma_id"], 1), "%\n")
+cat("I² (within studies):", round(i2_results_no_transf["I2_ma_e_id"], 1), "%\n")
+
+orchard_plot_no_transf <- orchard_plot(
+  object = mod_no_transf,
   group = "ma_id",
   xlab = "log Odds Ratio",
   transfm = "none"
@@ -335,10 +463,343 @@ orchard_plot2 <- orchard_plot(
   theme(
     panel.border = element_rect(colour = "black", fill = NA, size = 1.3),
     axis.text.x = element_text(size = 10)
-  ) +
-  scale_y_continuous(limits = c(-1, 1), breaks = seq(-1, 1, by = 0.5))
+  )
 
 # Display the plot
-print(orchard_plot2)
+print(orchard_plot_no_transf)
 ```
 
+# Second Research Question
+## Chemicals
+
+Is there any difference in the significance and strength of the association with adverse health outcomes among individual PFAS?
+YES - p-val < .0001
+
+What individual PFAS are significantly associated with adverse health outcomes?
+PFBS: 0.2947, p-val = 0.0040
+PFHxS: 0.0549, p-val = 0.0040
+PFNA: 0.0413, p-val = 0.0742
+PFOA: 0.0820, p-val <.0001 
+PFOS: 0.0877, p-val <.0001
+PFUnDA: -0.0741, 0.0737
+
+```{r}
+ma_e_details_no_transf$chemical_id <- as.factor(ma_e_details_no_transf$chemical_id)
+
+mod2 <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              mods = ~ chemical_id -1,
+              data = ma_e_details_no_transf)
+
+# Display model results
+summary(mod2)
+i2_ml(mod2)
+```
+
+## Health outcome class
+
+Is there any difference in the significance and strength of the association with PFAS exposure among individual classes (lower level) of adverse health outcomes?
+YES - p-val = 0.0005
+
+What classes (lower level) of adverse health outcomes are significantly associated with PFAS exposure?
+Hypertensive diseases: p-val = 0.0024
+Metabolic disorders: p-val = 0.0055
+Oedema, proteinuria, or hypertensive disorders in pregnancy, childbirth, or the puerperium: p-val = 0.0020
+Osteopathies or chondropathies: p-val = 0.0410	
+
+```{r}
+ma_e_details_no_transf$health_outcome_class <- as.factor(ma_e_details_no_transf$health_outcome_class)
+#ma_e_details_no_transf$health_outcome_class <- relevel(ma_e_details_no_transf$health_outcome_class, ref = "Hypertensive diseases")
+
+mod3 <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              mods = ~ health_outcome_class -1,
+              data = ma_e_details_no_transf)
+
+# Display model results
+summary(mod3)
+```
+
+## Healtch outcome group
+
+Is there any difference in the significance and strength of the association with PFAS exposure among individual groups (higher level) of adverse health outcomes?
+YES - p-val = 0.0014
+
+What groups (higher level) of adverse health outcome are significantly associated with PFAS exposure?
+Diseases of the circulatory system: p-val = 0.0612
+Pregnancy, childbirth or the puerperium: p-val = 0.0019
+
+```{r}
+ma_e_details_no_transf$health_outcome_group <- as.factor(ma_e_details_no_transf$health_outcome_group)
+
+mod4 <- rma.mv(yi = logOR,  
+              V = se^2, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              mods = ~ health_outcome_group -1,
+              data = ma_e_details_no_transf)
+
+# Display model results
+summary(mod4)
+```
+
+# Third Research Question
+
+## Chemicals
+
+
+```{r}
+ma_e_details_no_transf <- ma_e_details_no_transf %>% 
+  filter(chemical_id != "PFAS")
+
+mod_sub <- rma.mv(yi = logOR,  
+                  V = se^2,
+                  mods = ~ chemical_id -1,
+                   random = list(~1|ma_id,
+                                 ~1|ma_e_id,
+                                 ~ chemical_id|health_outcome_group),
+                   test = "t", #to conunteract potential small sample size 
+                   sparse = T,
+                   data = ma_e_details_no_transf,
+                   control = list(iter.max = 1000, 
+                                  rel.tol = 1e-8))
+
+# Display model results
+summary(mod_sub)
+```
+
+```{r}
+k_n_data <- ma_e_details_no_transf %>% 
+  group_by(chemical_id) %>%
+  arrange(chemical_id) %>% 
+  summarise(k = n(), n = length(unique(ma_id)))
+
+res_tab1 <- broom::tidy(mod_sub)
+res_tab1$ci.lb <- mod_sub$ci.lb
+res_tab1$ci.ub <- mod_sub$ci.ub
+res_tab1$pval <-mod_sub$pval
+res_tab1 <- res_tab1 %>% 
+  mutate(
+    chemical_id = str_remove(term, "^chemical_id"),  # Remove 'Pchemical_id: ' prefix
+  ) %>% 
+  arrange(chemical_id)
+
+res_tab1 <- res_tab1 %>% 
+  mutate(k = k_n_data$k) %>% 
+  mutate(n = k_n_data$n)
+
+# Prepare the data for plotting and order chemical_id by estimate value
+plot_data1 <- res_tab1 %>%
+  as.data.frame() %>% 
+  filter(k > 1) %>% 
+  arrange(estimate)
+
+# Create the flipped forest plot
+forest_plot1 <- ggplot(plot_data1, aes(y = reorder(chemical_id, estimate), x = estimate)) +
+  geom_point(aes(size = k),  # Make point size proportional to k
+             color = ifelse(plot_data1$pval > 0.05, "grey", "black"),  # You can change the color if desired
+             alpha = 1) +  # Add transparency for better visibility 
+  scale_size(range = c(5, 13)) + # Set minimum size to 3 and maximum to 6
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), 
+                 height = 0.2,
+                 alpha = ifelse(plot_data1$pval > 0.05, 0.6, 1)) +  # Horizontal error bars
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line at 1
+  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = - 0.3),
+            hjust = 0, size = 5, # Add k values as text next to the points
+            fontface = ifelse(plot_data1$pval < 0.05, "bold", "plain")) +  # Access pval outside aes()
+  # Add "*" next to PFUnDA and PFNA
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = -0.21, label = "*"), size = 9, color = "black") +
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = ci.lb, label = "*"),
+  #           hjust = 1.2, vjust = 0.7, size = 6, color = "black") +
+  xlab("logOR") +
+  ylab("PFAS") +
+  #ggtitle("B") +
+  theme_minimal() +  # Use a minimal theme
+  theme(legend.position = "none",
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+         plot.title = element_text(face = "bold", size = 18),
+       legend.title = element_text(size = 16),
+        legend.text = element_text(size = 15),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.y = element_text(size = 17),
+       axis.text.x = element_text(size = 17)) #+  
+   #scale_x_break(c(4, 6)) +
+   #scale_x_continuous(breaks = seq(0, 4, by = 1), limits = c(-0.21, 4))
+  
+forest_plot1
+```
+
+## Health outcomes (groups)
+
+```{r}
+mod_sub2 <- rma.mv(yi = logOR,  
+                  V = se^2,
+                  mods = ~ health_outcome_group -1,
+                   random = list(~1|ma_id,
+                                 ~1|ma_e_id,
+                                 ~ health_outcome_group|chemical_id),
+                   test = "t", #to conunteract potential small sample size 
+                   sparse = T,
+                   data = ma_e_details_no_transf,
+                   control = list(iter.max = 1000, 
+                                  rel.tol = 1e-8))
+
+# Display model results
+summary(mod_sub2)
+```
+
+```{r}
+k_n_data <- ma_e_details_no_transf %>% 
+  group_by(health_outcome_group) %>%
+  arrange(health_outcome_group) %>% 
+  summarise(k = n(), n = length(unique(ma_id)))
+
+res_tab1 <- broom::tidy(mod_sub2)
+res_tab1$ci.lb <- mod_sub2$ci.lb
+res_tab1$ci.ub <- mod_sub2$ci.ub
+res_tab1$pval <-mod_sub2$pval
+res_tab1 <- res_tab1 %>% 
+  mutate(
+    health_outcome_group = str_remove(term, "^health_outcome_group"),  # Remove 'Pchemical_id: ' prefix
+  ) %>% 
+  arrange(health_outcome_group)
+
+res_tab1 <- res_tab1 %>% 
+  mutate(k = k_n_data$k) %>% 
+  mutate(n = k_n_data$n)
+
+# Prepare the data for plotting and order health_outcome_group by estimate value
+plot_data1 <- res_tab1 %>%
+  as.data.frame() %>% 
+  #filter(k > 1) %>% 
+  filter(n > 1) %>% 
+  arrange(estimate)
+
+# Create the flipped forest plot
+forest_plot2 <- ggplot(plot_data1, aes(y = reorder(health_outcome_group, estimate), x = estimate)) +
+  geom_point(aes(size = k),  # Make point size proportional to k
+             color = ifelse(plot_data1$pval > 0.05, "grey", "black"),  # You can change the color if desired
+             alpha = 1) +  # Add transparency for better visibility 
+  scale_size(range = c(5, 13)) + # Set minimum size to 3 and maximum to 6
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), 
+                 height = 0.2,
+                 alpha = ifelse(plot_data1$pval > 0.05, 0.6, 1)) +  # Horizontal error bars
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line at 1
+  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = - 0.3),
+            hjust = 0, size = 5, # Add k values as text next to the points
+            fontface = ifelse(plot_data1$pval < 0.05, "bold", "plain")) +  # Access pval outside aes()
+  # Add "*" next to PFUnDA and PFNA
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = -0.21, label = "*"), size = 9, color = "black") +
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = ci.lb, label = "*"),
+  #           hjust = 1.2, vjust = 0.7, size = 6, color = "black") +
+  xlab("logOR") +
+  ylab("Health Outcome Group") +
+  ggtitle("A") +
+  theme_minimal() +  # Use a minimal theme
+  theme(legend.position = "none",
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+         plot.title = element_text(face = "bold", size = 18),
+       legend.title = element_text(size = 16),
+        legend.text = element_text(size = 15),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.y = element_text(size = 17),
+       axis.text.x = element_text(size = 17)) #+  
+   #scale_x_break(c(4, 6)) +
+   #scale_x_continuous(breaks = seq(0, 4, by = 1), limits = c(-0.21, 4))
+  
+forest_plot2
+```
+
+## Health outcomes (classes)
+
+```{r}
+mod_sub3 <- rma.mv(yi = logOR,  
+                  V = se^2,
+                  mods = ~ health_outcome_class -1,
+                   random = list(~1|ma_id,
+                                 ~1|ma_e_id,
+                                 ~ health_outcome_class|chemical_id),
+                   test = "t", #to conunteract potential small sample size 
+                   sparse = T,
+                   data = ma_e_details_no_transf,
+                   control = list(iter.max = 1000, 
+                                  rel.tol = 1e-8))
+
+# Display model results
+summary(mod_sub3)
+```
+
+```{r}
+k_n_data <- ma_e_details_no_transf %>% 
+  group_by(health_outcome_class) %>%
+  arrange(health_outcome_class) %>% 
+  summarise(k = n(), n = length(unique(ma_id)))
+
+res_tab1 <- broom::tidy(mod_sub3)
+res_tab1$ci.lb <- mod_sub3$ci.lb
+res_tab1$ci.ub <- mod_sub3$ci.ub
+res_tab1$pval <-mod_sub3$pval
+res_tab1 <- res_tab1 %>% 
+  mutate(
+    health_outcome_class = str_remove(term, "^health_outcome_class"),  # Remove 'Pchemical_id: ' prefix
+  ) %>% 
+  arrange(health_outcome_class)
+
+res_tab1 <- res_tab1 %>% 
+  mutate(k = k_n_data$k) %>% 
+  mutate(n = k_n_data$n)
+
+# Prepare the data for plotting and order health_outcome_class by estimate value
+plot_data1 <- res_tab1 %>%
+  as.data.frame() %>% 
+  #filter(k > 1) %>% 
+  filter(n > 1) %>% 
+  arrange(estimate)
+
+# Create the flipped forest plot
+forest_plot2 <- ggplot(plot_data1, aes(y = reorder(health_outcome_class, estimate), x = estimate)) +
+  geom_point(aes(size = k),  # Make point size proportional to k
+             color = ifelse(plot_data1$pval > 0.05, "grey", "black"),  # You can change the color if desired
+             alpha = 1) +  # Add transparency for better visibility 
+  scale_size(range = c(5, 13)) + # Set minimum size to 3 and maximum to 6
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), 
+                 height = 0.2,
+                 alpha = ifelse(plot_data1$pval > 0.05, 0.6, 1)) +  # Horizontal error bars
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line at 1
+  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = - 0.3),
+            hjust = 0, size = 5, # Add k values as text next to the points
+            fontface = ifelse(plot_data1$pval < 0.05, "bold", "plain")) +  # Access pval outside aes()
+  # Add "*" next to PFUnDA and PFNA
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = -0.21, label = "*"), size = 9, color = "black") +
+  # geom_text(data = subset(plot_data1, PFAS_ID %in% c("PFUnDA", "PFNA", "PFTrDA", "PFDoDA", "FOSA", "PFHxS", "PFDS", "PFTeDA", "PFOA", "PFBA", "PFPeA", "PFHpA", "PFBS", "PFHxA")),
+  #           aes(x = ci.lb, label = "*"),
+  #           hjust = 1.2, vjust = 0.7, size = 6, color = "black") +
+  xlab("logOR") +
+  ylab("Health Outcome Class") +
+  ggtitle("B") +
+  theme_minimal() +  # Use a minimal theme
+  theme(legend.position = "none",
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+         plot.title = element_text(face = "bold", size = 18),
+       legend.title = element_text(size = 16),
+        legend.text = element_text(size = 15),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.y = element_text(size = 17),
+       axis.text.x = element_text(size = 17)) #+  
+   #scale_x_break(c(4, 6)) +
+   #scale_x_continuous(breaks = seq(0, 4, by = 1), limits = c(-0.21, 4))
+  
+forest_plot2
+```
