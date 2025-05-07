@@ -19,7 +19,23 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Research Protocol: https://osf.io/dc5mx
+Link to the pre-registered Research Protocol: https://osf.io/dc5mx
+
+Review questions:
+
+1.	How does exposure to per- and polyfluoroalkyl substances (PFAS) affect human health?
+2.	Which PFAS are linked to adverse health effects, and what are the associated health outcomes?
+3.	What are the significant associations between individual PFAS and specific health outcomes, and how strong are these correlations?
+4.	How consistent are the findings regarding PFAS-health outcome associations across different meta-analyses?
+
+Objectives:
+
+1.	To evaluate the magnitude and variability of associations between PFAS exposure and human health outcomes based on multiple meta-analyses.
+2.	To identify specific PFAS (e.g., perfluorooctane sulfonate (PFOS)) significantly associated with adverse health effects and the specific health outcomes impacted.
+3.	To determine significant PFAS-health outcome correlations and assess the strength of these relationships.
+4.	To assess the consistency of findings from objectives 2 and 3 by analyzing the heterogeneity across meta-analyses.
+
+In this analysis workflow, we answer to research question 4 within research questions 1, 2, and 3. In other words, every time we assess the magnitude of results we also assess the consistency of results.
 
 # Packages
 
@@ -38,7 +54,8 @@ pacman::p_load(tidyr,
                cowplot,
                purrr,
                broom,
-               clubSandwich
+               clubSandwich,
+               ggrepel
                )       
 ```
 
@@ -251,7 +268,7 @@ orchard_plot(
 
 The moderator analysis revealed a statistically significant impact of the effect size metric on the overall estimates (p = 0.0003). 
 
-To reduce potential bias and improve consistency, I subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 200, number of meta-analyses: 23).
+To reduce potential bias and improve consistency, I subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 206, number of meta-analyses: 23).
 
 # First Research Question
 
@@ -259,9 +276,9 @@ To reduce potential bias and improve consistency, I subsequently restricted the 
 
 **Objective:** To evaluate the magnitude and variability of associations between PFAS exposure and adverse human health outcomes based on multiple meta-analyses.
 
-## The Meta-analytic Model
+## The Overall Result
 
-We are fitting a multilevel random-effects model via *rma.mv()* from the *metafor* package.
+Our meta-meta-analytic approach addressed heterogeneity at two levels. First, we modeled between-meta-analysis heterogeneity in reported effect sizes (logOR) using a multilevel meta-analytic model. This allowed us to partition the variance in outcomes across and within meta-analyses. Second, we meta-analyzed heterogeneity as the outcome by synthesizing the I² values reported by the included meta-analyses. These were transformed into ln(H) to quantify and model differences in the internal heterogeneity of primary studies.
 
 Random effect structure:
 
@@ -283,10 +300,15 @@ mod_overall <- rma.mv(yi = logOR,
                                       ~1|ma_e_id), 
                         data = dat_quant,
                         test = "t")
+```
 
+
+```{r, echo=FALSE}
 #mod_overall <- robust(mod_overall, dat_quant$pair) #The robust() function computes robust standard errors that account for non-normality and/or heteroscedasticity in the residuals.
 summary(mod_overall)
+```
 
+```{r, include=FALSE}
 #Extracting data from the model
 overall_results <- tibble(
   lnOR = as.numeric(mod_overall$b),
@@ -295,45 +317,6 @@ overall_results <- tibble(
   lnOR_p_value = mod_overall$pval
 )
 ```
-
-```{r, echo=FALSE}
-overall_plot <- orchard_plot(
-  object = mod_overall,
-  group = "ma_id",
-  xlab = "logOR",
-  transfm = "none",
-  trunk.size = 0.8,
-  branch.size = 2.5,
-  alpha = 1
-) + 
-  # Add faded red background for x < 0
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
-           fill = "green", alpha = 0.08) + 
-  # Add faded green background for x > 0
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
-           fill = "red", alpha = 0.08) + 
-  theme(
-    legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
-    legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
-    legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
-    legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
-  )
-
-# Display the plot
-print(overall_plot)
-
-# I²
-i2_results_no_transf <- i2_ml(mod_overall)
-print(i2_results_no_transf)
-# Print I² values
-cat("Heterogeneity (I\u00b2 between studies):", round(i2_results_no_transf["I2_ma_id"], 1), "%\n")
-cat("Heterogeneity (I\u00b2 within studies):", round(i2_results_no_transf["I2_ma_e_id"], 1), "%\n")
-```
-
-*Overall association between PFAS exposure and adverse health outcomes, expressed as a log Odds Ratio (logOR). Positive values indicate increased odds of adverse outcomes with higher PFAS exposure. This estimate is based on a meta-meta-analysis of 207 meta-analytic effect sizes (k) drawn from 23 published meta-analyses. The pooled effect size is shown as a black circle, with thicker horizontal bars indicating its 95% confidence interval and thinner bars representing the 95% prediction interval. Light-blue bubbles depict individual effect sizes, scaled by their precision (inverse of the standard error; see legend). The number in parentheses denotes the number of studies contributing to the overall effect. A negative association is shown in the green-shaded area (logOR < 0), while a positive association appears in the red-shaded area (logOR > 0).*
-
-
-## Analysis of Heterogeneity
 
 ```{r, results=FALSE}
 # 1. Calculate H², lnH², and SElnH
@@ -366,8 +349,8 @@ VCV_H2 <- impute_covariance_matrix(vi = dat_H2$se^2,
                                    r = 0.5)
 ```
 
-```{r, results=FALSE, warning=FALSE}
-# Meta-regression with chemical_id as moderator
+
+```{r, warning=FALSE}
 mod_overall_H2 <- rma.mv(
   yi = lnH, 
   V = VCV_H2, 
@@ -377,6 +360,10 @@ mod_overall_H2 <- rma.mv(
   test = "t"
 )
 
+summary(mod_overall_H2)
+```
+
+```{r, include=FALSE}
 #Extracting data from the model
 overall_results_H2 <- tibble(
   lnH = as.numeric(mod_overall$b),
@@ -385,13 +372,66 @@ overall_results_H2 <- tibble(
   lnH_p_value = mod_overall$pval
 ) %>% 
   mutate(
-    I2 = ((exp(lnH))^2 - 1) / (exp(lnH))^2 * 100,  # Convert to percentage
-    I2_ci_lower = ((exp(lnH_ci_lower))^2 - 1) / (exp(lnH_ci_lower))^2 * 100,
-    I2_ci_upper = ((exp(lnH_ci_upper))^2 - 1) / (exp(lnH_ci_upper))^2 * 100,
+    # 1) Compute H2 and its CIs
+    H2        = exp(2 * lnH),
+    H2_lb     = exp(2 * lnH_ci_lower),
+    H2_ub     = exp(2 * lnH_ci_upper),
+
+    # 2) Convert to I2 and truncate to [0,100]
+    I2           = pmin(100, pmax(0, (H2 - 1)/H2  * 100)),
+    I2_ci_lower  = pmin(100, pmax(0, (H2_lb - 1)/H2_lb * 100)),
+    I2_ci_upper  = pmin(100, pmax(0, (H2_ub - 1)/H2_ub * 100))
   )
+
+I2_text <- paste0("I² = ", round(overall_results_H2$I2, 1), 
+                  "% [", round(overall_results_H2$I2_ci_lower, 1), 
+                  "–", round(overall_results_H2$I2_ci_upper, 1), "%]")
 ```
 
+
 ```{r, echo=FALSE}
+overall_plot <- orchard_plot(
+  object = mod_overall,
+  group = "ma_id",
+  xlab = "logOR",
+  transfm = "none",
+  trunk.size = 0.8,
+  branch.size = 2.5,
+  alpha = 1
+) + 
+  # Add faded red background for x < 0
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
+           fill = "green", alpha = 0.08) + 
+  # Add faded green background for x > 0
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
+           fill = "red", alpha = 0.08) + 
+  annotate("text", 
+           x = Inf, y = Inf, 
+           label = I2_text, 
+           hjust = 1.1, vjust = 1.5, 
+           size = 4.5, fontface = "italic")  +
+  theme(
+    legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
+    legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
+    legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
+    legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
+  )
+
+print(overall_plot)
+```
+
+*Overall association between PFAS exposure and adverse health outcomes, expressed as a log Odds Ratio (logOR). Positive values indicate increased odds of adverse outcomes with higher PFAS exposure. This estimate is based on a meta-meta-analysis of 207 meta-analytic effect sizes (k) drawn from 23 published meta-analyses. The pooled effect size is shown as a black circle, with thicker horizontal bars indicating its 95% confidence interval and thinner bars representing the 95% prediction interval. Light-blue bubbles depict individual effect sizes, scaled by their precision (inverse of the standard error; see legend). The number in parentheses denotes the number of studies contributing to the overall effect. A negative association is shown in the green-shaded area (logOR < 0), while a positive association appears in the red-shaded area (logOR > 0).*
+
+```{r, include=FALSE}
+# I²
+i2_results_no_transf <- i2_ml(mod_overall)
+print(i2_results_no_transf)
+# Print I² values
+cat("Heterogeneity (I\u00b2 between studies):", round(i2_results_no_transf["I2_ma_id"], 1), "%\n")
+cat("Heterogeneity (I\u00b2 within studies):", round(i2_results_no_transf["I2_ma_e_id"], 1), "%\n")
+```
+
+```{r, include=FALSE}
 merged_overall_results <- bind_cols(overall_results, overall_results_H2)
 
 ggplot(merged_overall_results, aes(x = lnOR, y = I2)) +
@@ -415,28 +455,11 @@ ggplot(merged_overall_results, aes(x = lnOR, y = I2)) +
   theme_minimal(base_size = 13)
 ```
 
-
-```{r, echo=FALSE}
-overall_plot_H2 <- orchard_plot(
-  object = mod_overall_H2,
-  group = "ma_id",
-  xlab = "lnH",
-  transfm = "none",
-  trunk.size = 0.8,
-  branch.size = 2.5,
-  alpha = 1
-)
-
-# Display the plot
-print(overall_plot_H2)
-```
-
-
 ## Summary Results RQ1
 
-**1)**  Exposure to PFAS showed a weak but significant association with increased odds of an adverse health outcome, across all meta-analyses included. Specifically, a 5.8% (CI 3.1% - 8.6%) increase.
+**1)**  Across all meta-analyses included in our synthesis, exposure to PFAS was associated with a statistically significant increase in the odds of experiencing adverse health outcomes. On average, PFAS exposure was linked to a 5.8% increase in risk (95% CI: 3.1%–8.6%), suggesting a modest but measurable impact on human health.
 
-**2)**  We found substantial heterogeneity among the effect sizes, with an I² value of 86.9% indicating that most of the variability observed is due to true differences across studies rather than random sampling error (the effect sizes vary more than would be expected by chance alone). 15.3% of the variability comes between meta-analyses, meaning there are some real differences across different meta-analyses (e.g., different study selections, methodologies, populations, exposures). 71.7% of the variability comes within meta-analyses, meaning most of the real heterogeneity occurs among the individual effect sizes within each meta-analysis.
+**2)**  The consistency of findings varied depending on the level of analysis. While individual meta-analyses generally reported low within-review heterogeneity (mean I² ≈ 15%), our overall model revealed high heterogeneity (I² = 87%) across all meta-analyses. Most of this heterogeneity arose within, rather than between, meta-analyses. This discrepancy highlights that although individual reviews often appear internally consistent, notable variability exists when their results are aggregated. Such inconsistency likely reflects differences in study populations, PFAS exposure measurements, and methodological quality across reviews.
 
 # Second Research Question
 
@@ -501,13 +524,7 @@ results_list <- map_dfr(chemicals, function(chem) {
 })
 ```
 
-```{r, include=FALSE, warning=FALSE}
-# Save the results table
-write.csv(results_list, here("R", "tables", "chemical_specific_results.csv"), row.names = FALSE)
-```
-
-
-```{r, echo=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+```{r, include=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
 plot_data_chemical <- results_list %>% 
   filter(!is.na(logOR)) %>% 
   arrange(logOR)
@@ -521,7 +538,7 @@ forest_plot_chemical <- ggplot(plot_data_chemical, aes(y = reorder(chemical_id, 
                  height = 0.2,
                  alpha = ifelse(plot_data_chemical$pval > 0.05, 0.6, 1)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(plot_data_chemical$ci.lb, na.rm = TRUE) - 0.2),
+  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
             hjust = 0, size = 5,
             fontface = ifelse(plot_data_chemical$pval < 0.05, "bold", "plain")) +
   xlab("logOR") +
@@ -538,6 +555,135 @@ forest_plot_chemical <- ggplot(plot_data_chemical, aes(y = reorder(chemical_id, 
         axis.text.x = element_text(size = 15))
 
 forest_plot_chemical
+```
+
+```{r, results=FALSE, warning=FALSE}
+# Run separate meta-analyses for each chemical_id
+results_list2 <- map_dfr(chemicals, function(chem) {
+  dat_sub <- dat_H2 %>% filter(chemical_id == chem)
+  
+  if (n_distinct(dat_sub$ma_e_id) > 1) {  # Require at least 2 meta-analytic estimates
+    tryCatch({
+      # Calculate VCV matrix for this subset
+      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
+                                          cluster = dat_sub$pair,
+                                          r = 0.5)
+      
+      model <- rma.mv(yi = lnH,  
+                      V = VCV_sub,
+                      random = list(~1|ma_id,
+                                    ~1|ma_e_id),
+                      test = "t", 
+                      sparse = TRUE,
+                      data = dat_sub,
+                      control = list(iter.max = 1000, rel.tol = 1e-8))
+      
+      # Calculate heterogeneity statistics
+      # tau2_raw <- sum(model$sigma2)
+      # sigma2_v <- sum(1 / model$vi) * (model$k - 1) / (sum(1 / model$vi)^2 - sum((1 / model$vi)^2))
+      # I2_raw <- 100 * (tau2_raw / (tau2_raw + sigma2_v))
+      # CV_raw <- sqrt(tau2_raw) / abs(model$b[1,1])
+      
+      tibble(
+        chemical_id = chem,
+        lnH = model$b[1,1],
+        ci.lb = model$ci.lb,
+        ci.ub = model$ci.ub,
+        pval = model$pval,
+        # tau2 = tau2_raw,
+        # I2 = I2_raw,
+        # CV = CV_raw,
+        k = nrow(dat_sub),
+        n = n_distinct(dat_sub$ma_id)
+      )
+    }, error = function(e) {
+      tibble(chemical_id = chem, lnH = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+             #tau2 = NA, I2 = NA, CV = NA,
+             k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
+    })
+  } else {
+     tibble(chemical_id = chem, lnH = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+           #tau2 = NA, I2 = NA, CV = NA,
+           k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
+  }
+})
+```
+
+```{r, include=FALSE}
+custom_order <- c("PFDoDA", "PFUnDA", "PFHpA", "PFDA", "PFAS", "PFNA", "PFOS", "PFHxS", "PFOA")
+
+plot_data_chemical_H2 <- results_list2 %>% 
+  filter(!is.na(lnH)) %>% 
+  mutate(chemical_id = factor(chemical_id, levels = custom_order)) %>% 
+  mutate(
+    # 1) Compute H2 and its CIs
+    H2        = exp(2 * lnH),
+    H2_lb     = exp(2 * ci.lb),
+    H2_ub     = exp(2 * ci.ub),
+
+    # 2) Convert to I2 and truncate to [0,100]
+    I2           = pmin(100, pmax(0, (H2 - 1)/H2  * 100)),
+    I2_ci_lower  = pmin(100, pmax(0, (H2_lb - 1)/H2_lb * 100)),
+    I2_ci_upper  = pmin(100, pmax(0, (H2_ub - 1)/H2_ub * 100))
+  )
+
+plot_data_chemical_merged <- left_join(plot_data_chemical, plot_data_chemical_H2 %>% 
+                                         select(chemical_id, I2, I2_ci_lower, I2_ci_upper), 
+                                       by = "chemical_id")
+```
+
+
+```{r, include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+forest_plot_chemical <- forest_plot_chemical +
+  geom_text(data = plot_data_chemical_merged,
+            aes(label = paste0(
+              "I² = ", round(I2, 1), "% [", 
+              round(I2_ci_lower, 1), "–", 
+              round(I2_ci_upper, 1), "]")),
+            hjust = -0.2, vjust = -0.7, size = 4.5)
+
+
+forest_plot_chemical
+```
+
+```{r, echo=FALSE}
+ggplot(plot_data_chemical_merged, aes(x = logOR, y = I2, label = chemical_id, size = k, color = pval < 0.05 | pval < 0.05)) +
+  geom_point(alpha = 0.5) +
+  geom_text_repel(size = 4, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
+  
+  # Quadrant text
+  annotate("text", x = -0.095, y = 95, label = "harmless\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 95, label = "harmful\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 3, label = "harmful\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 3, label = "harmless\nhigh consistency", hjust = 0, size = 4) +
+
+  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
+  scale_size(range = c(3, 12)) +
+  scale_x_continuous(limits = c(-0.1, 0.1), breaks = seq(-0.1, 0.1, by = 0.05)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
+  labs(
+    x = "Effect size (logOR)",
+    y = "Heterogeneity (I\u00b2 %)",
+    color = "logOR p < 0.05:",
+    size = "k:"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.margin = margin(),
+    panel.grid = element_blank()
+  ) +
+  guides(
+    color = "none",
+    size = guide_legend(
+    override.aes = list(color = "grey50"),
+    order = 2
+  )
+  )
+
 ```
 
 *Each estimate is based on a separate meta-analysis for each PFAS chemical.*
@@ -624,7 +770,7 @@ results_health <- map_dfr(outcomes, function(outcome) {
 ```
 
 
-```{r, echo=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+```{r, include=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
 plot_data_health <- results_health %>% 
   filter(!is.na(logOR)) %>% 
   arrange(logOR) %>% 
@@ -639,7 +785,7 @@ forest_plot_health <- ggplot(plot_data_health, aes(y = reorder(health_outcome_gr
                  height = 0.2,
                  alpha = ifelse(plot_data_health$pval > 0.05, 0.6, 1)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(plot_data_health$ci.lb, na.rm = TRUE) - 0.2),
+  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
             hjust = 0, size = 5,
             fontface = ifelse(plot_data_health$pval < 0.05, "bold", "plain")) +
   xlab("logOR") +
@@ -658,19 +804,180 @@ forest_plot_health <- ggplot(plot_data_health, aes(y = reorder(health_outcome_gr
 forest_plot_health
 ```
 
-*Each estimate is based on a separate meta-analysis for each health outcome group. The plot shows only estimates using data from ≥2 meta-analyses (See supplementary files for the full version of the plot).*
+
+```{r, results=FALSE, warning=FALSE}
+dat_H2 <- dat_H2 %>% 
+mutate(health_outcome_group = recode(
+    health_outcome_group,
+    "Endocrine, nutritional or metabolic diseases" = "Endocrine diseases",
+    "Diseases of the circulatory system" = "Diseases of the\ncirculatory system",
+    "Pregnancy, childbirth or the puerperium" = "Pregnancy or\nchildbirth",
+    "Certain conditions originating in the perinatal period" = "Perinatal period",
+    "Mental, behavioural or neurodevelopmental disorders" = "Neurodevelopmental\ndisorders",
+    "Diseases of the musculoskeletal system or connective tissue" = "Diseases of the\nmusculoskeletal system",
+    "Symptoms, signs or clinical findings, not elsewhere classified" = "Symptoms not\nelsewhere classified",
+    "Diseases of the respiratory system" = "Diseases of the\nrespiratory system",
+    "Diseases of the genitourinary system" = "Diseases of the\ngenitourinary system"
+  ))
+
+# Get a list of outcome groups
+outcomes <- unique(dat_H2$health_outcome_group)
+
+# Loop over each health outcome group
+results_health_H2 <- map_dfr(outcomes, function(outcome) {
+  dat_sub <- dat_H2 %>% filter(health_outcome_group == outcome)
+  
+  if (n_distinct(dat_sub$ma_e_id) > 1) { # requires at least 2 meta-analytic estimates
+    tryCatch({
+      
+      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
+                                          cluster = dat_sub$pair,
+                                          r = 0.5)
+      
+      model <- rma.mv(yi = lnH,  
+                      V = VCV_sub,
+                      random = list(~1|ma_id,
+                                    ~1|ma_e_id),
+                      test = "t", 
+                      sparse = TRUE,
+                      data = dat_sub,
+                      control = list(iter.max = 1000, rel.tol = 1e-8))
+      
+      # Calculate heterogeneity statistics
+      # tau2_raw <- sum(model$sigma2)
+      # sigma2_v <- sum(1 / model$vi) * (model$k - 1) / (sum(1 / model$vi)^2 - sum((1 / model$vi)^2))
+      # I2_raw <- 100 * (tau2_raw / (tau2_raw + sigma2_v))
+      # CV_raw <- sqrt(tau2_raw) / abs(model$b[1,1])
+      
+      tibble(
+        health_outcome_group = outcome,
+        lnH = model$b[1,1],
+        ci.lb = model$ci.lb,
+        ci.ub = model$ci.ub,
+        pval = model$pval,
+        # tau2 = tau2_raw,
+        # I2 = I2_raw,
+        # CV = CV_raw,
+        k = nrow(dat_sub),
+        n = n_distinct(dat_sub$ma_id)
+      )
+    }, error = function(e) {
+      tibble(health_outcome_group = outcome, lnH = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+             #tau2 = NA, I2 = NA, CV = NA,
+             k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
+    })
+  } else {
+    tibble(health_outcome_group = outcome, lnH = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+             #tau2 = NA, I2 = NA, CV = NA,
+             k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
+  }
+})
+```
+
+```{r, include=FALSE}
+custom_order <- c("Neurodevelopmental\ndisorders", "Neoplasms", "Perinatal period", "Pregnancy or\nchildbirth", "Diseases of the\ncirculatory system", "Endocrine diseases")
+
+plot_data_health_H2 <- results_health_H2 %>% 
+  filter(!is.na(lnH)) %>% 
+  mutate(health_outcome_group = factor(health_outcome_group, levels = custom_order)) %>% 
+  mutate(
+    # 1) Compute H2 and its CIs
+    H2        = exp(2 * lnH),
+    H2_lb     = exp(2 * ci.lb),
+    H2_ub     = exp(2 * ci.ub),
+
+    # 2) Convert to I2 and truncate to [0,100]
+    I2           = pmin(100, pmax(0, (H2 - 1)/H2  * 100)),
+    I2_ci_lower  = pmin(100, pmax(0, (H2_lb - 1)/H2_lb * 100)),
+    I2_ci_upper  = pmin(100, pmax(0, (H2_ub - 1)/H2_ub * 100))
+  )
+
+plot_data_health_merged <- left_join(plot_data_health, plot_data_health_H2 %>% 
+                                         select(health_outcome_group, I2, I2_ci_lower, I2_ci_upper), 
+                                       by = "health_outcome_group")
+```
+
+
+```{r, include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+forest_plot_health2 <- forest_plot_health +
+  geom_text(data = plot_data_health_merged,
+            aes(label = paste0(
+              "I² = ", round(I2, 1), "% [", 
+              round(I2_ci_lower, 1), "–", 
+              round(I2_ci_upper, 1), "]")),
+            hjust = -0.2, vjust = -0.7, size = 4.5)
+
+
+forest_plot_health2
+```
+
+```{r, echo=FALSE}
+ggplot(plot_data_health_merged, aes(x = logOR, y = I2, label = health_outcome_group, size = k, color = pval < 0.05 | pval < 0.05)) +
+  geom_point(alpha = 0.5) +
+  geom_text_repel(size = 4, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
+  
+  # Quadrant text
+  annotate("text", x = -0.095, y = 95, label = "harmless\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 95, label = "harmful\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 3, label = "harmful\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 3, label = "harmless\nhigh consistency", hjust = 0, size = 4) +
+
+  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
+  scale_size(range = c(3, 12)) +
+  scale_x_continuous(limits = c(-0.1, 0.1), breaks = seq(-0.1, 0.1, by = 0.05)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
+  labs(
+    x = "Effect size (logOR)",
+    y = "Heterogeneity (I\u00b2 %)",
+    color = "logOR p < 0.05:",
+    size = "k:"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.margin = margin(),
+    panel.grid = element_blank()
+  ) +
+  guides(
+    color = "none",
+    size = guide_legend(
+    override.aes = list(color = "grey50"),
+    order = 2
+  )
+  )
+```
+
 
 ## Summary Results
 
-**1)**  The following substances showed significant associations with adverse health outcomes: 
+**1)**  
 
--  PFOA -> estimate: 0.073, p-val = 0.0096
--  PFOS -> estimate: 0.0611, p-val = 0.0064 
+-  **PFOS** and **PFOA** both show statistically significant positive associations (logOR = 0.061 and 0.073, respectively), meaning exposure is associated with increased odds of adverse outcomes. However, both also have moderate-to-high I² values (around 63–69%), suggesting that although the associations are consistent enough to reach statistical significance, there is notable heterogeneity in the size of the effect across meta-analyses.
 
-**2)**  The following health outcome groups showed significant associations with PFAS exposure:
+-  **PFHxS** and **PFNA** have positive but non-significant logORs and similarly high I² values (~62%), implying inconsistent evidence. The direction is generally toward harm, but effect sizes vary too much across studies to confirm a reliable association.
 
--  Diseases of the circulatory system -> estimate: 0.084, p-val < 0.0001 
--  Pregnancy, childbirth or the puerperium -> estimate: 0.049, p-val = 0.0460
+-  **PFUnDA** and **PFDA** have very low I² values (~14%) and small, non-significant logORs, suggesting high consistency, but no compelling evidence of a harmful effect. This could imply a genuine lack of association or uniformly small effects across studies.
+
+-  **PFDoDA** and **PFHpA** show near-zero or slightly negative logORs and moderate I² values (~35–46%), indicating modest inconsistency, but again no meaningful association with health outcomes.
+
+-  The **PFAS** (unspecified mix) group shows a near-zero, non-significant logOR and very high heterogeneity (I² = 69.8%), implying that the mixed results likely reflect true variability across the included studies rather than random error.
+
+**2)**  
+
+-  **Diseases of the circulatory system**: Strongest and most consistent association: PFAS exposure is associated with a statistically significant increase in odds (logOR = 0.084). While heterogeneity is moderate-to-high (I² = 67.2%), the tight confidence interval and high precision suggest a fairly robust relationship despite study-level differences.
+
+-  **Pregnancy, childbirth or the puerperium**: A significant but smaller effect (logOR = 0.049) with low heterogeneity (I² = 19.4%). This implies a consistent and reliable association, suggesting that even small effects are replicable across studies.
+
+-  **Perinatal period**: A positive but non-significant effect (logOR = 0.041) with low-to-moderate heterogeneity (I² = 32.1%). Results are fairly consistent, but the effect may be small or diluted by study design variation.
+
+-  **Endocrine diseases**: A relatively large but non-significant effect (logOR = 0.101) paired with moderate heterogeneity (I² = 54.4%). This combination implies uncertainty and variation across studies — some may show strong effects, others null or opposite. More research is likely needed.
+
+-  **Neoplasms**: Shows low, non-significant effect (logOR = 0.028) but very high heterogeneity (I² = 92.2%). This suggests results are highly inconsistent, and the small average effect likely masks large between-study variation, possibly due to differences in cancer types, latency periods, or exposure metrics.
+
+-  **Neurodevelopmental disorders**: No evidence of association (logOR ~ 0) with moderate heterogeneity (I² = 50.5%), suggesting that effects vary somewhat across studies, but overall there's no clear or consistent signal of harm.
 
 # Third Research Question
 
@@ -1009,159 +1316,6 @@ ggplot(est_dat, aes(x = chemical_id, y = estimate, ymin = ci.lb, ymax = ci.ub)) 
    estimate = 0.172, CI = [0.038, 0.305], p-val = 0.0333, n = 3, k = 5.
 -  PFUnDA - Diseases related to pregnancy or childbirth:
    estimate = -0.136, CI = [-0.229, -0.043], p-val = 0.0263, n = 3, k = 4.
-
-# Fourth Research Question
-
-**Question:** How consistent are the findings regarding PFAS-health outcome associations across different meta-analyses?
-
-To answer our last research question, we model heterogeneity and quantify its relationship with the mean point estimate for each health outcome category and PFAS. We use I² (i.e., the percentage of variance between effect sizes that cannot be attributed to sampling error) as our primary metric of heterogeneity. Modeling heterogeneity effectively requires a common effect size and its associated sampling error. To this end, we transform I² and Qt (i.e., Cochran's Q statistic) into H² and then H² into lnH², as described by Higgins & Thompson, 2002.
-
-## Chemcials
-
-```{r, results=FALSE, warning=FALSE}
-# Meta-regression with chemical_id as moderator
-model_H2_chemical <- rma.mv(
-  yi = lnH, 
-  V = VCV_H2, 
-  random = list(~1|ma_id,
-                ~1|ma_e_id),  
-  mods = ~ chemical_id -1,  
-  data = dat_H2
-)
-```
-
-```{r, include=FALSE}
-# Save chemical-level estimates
-chemical_results <- tibble(
-  chemical_id = rownames(model_H2_chemical$b),
-  estimate = as.numeric(model_H2_chemical$b),
-  ci_lower = model_H2_chemical$ci.lb,
-  ci_upper = model_H2_chemical$ci.ub,
-  p_value = model_H2_chemical$pval
-) %>% 
-  mutate(chemical_id = str_remove(chemical_id, "^chemical_id"))
-```
-
-```{r, echo=FALSE}
-plot_H2 <- chemical_results %>%
-  rename(lnH = estimate,
-         lnH_ci_lower = ci_lower,
-         lnH_ci_upper = ci_upper,
-         lnH_pval = p_value) %>%
-  left_join(plot_data_chemical, by = "chemical_id") %>% 
-  mutate(
-    H2 = (exp(lnH))^2,
-    I2 = (H2 - 1) / H2 * 100  # Convert to percentage
-  )
-
-ggplot(plot_H2, aes(x = logOR, y = I2, label = chemical_id, size = k, color = pval < 0.05 | pval < 0.05)) +
-  geom_point(alpha = 0.5) +
-  geom_text(size = 3, 
-            nudge_y = 0.1,
-            color = "black") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
-  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
-  scale_size(range = c(3, 10)) +
-  scale_x_continuous(limits = c(-0.2, 0.2),
-                     breaks = seq(-0.2, 0.2, by = 0.1)) +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
-  labs(
-    x = "Effect size (logOR)",
-    y = "Heterogeneity (I\u00b2 %)",
-    color = "logOR p < 0.05:",
-    size = "k:"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "bottom",
-    legend.box = "vertical",
-    legend.margin = margin(),
-    panel.grid = element_blank()
-  ) +
-  guides(
-    color = guide_legend(order = 1),  # First legend
-    size = guide_legend(order = 2)    # Second legend
-  )
-```
-
-## Health Outcome Groups
-
-```{r, results=FALSE, warning=FALSE}
-# Meta-regression with health_outcome_group as moderator
-model_H2_health <- rma.mv(
-  yi = lnH, 
-  V = VCV_H2, 
-  random = list(~1|ma_id,
-                ~1|ma_e_id),  
-  mods = ~ health_outcome_group -1,  
-  data = dat_H2
-)
-```
-
-```{r, include=FALSE}
-# Save health outcome-level estimates
-health_results <- tibble(
-  health_outcome_group = rownames(model_H2_health$b),
-  estimate = as.numeric(model_H2_health$b),
-  ci_lower = model_H2_health$ci.lb,
-  ci_upper = model_H2_health$ci.ub,
-  p_value = model_H2_health$pval
-) %>% 
-  mutate(health_outcome_group = str_remove(health_outcome_group, "^health_outcome_group"))
-```
-
-```{r, echo=FALSE}
-plot_data2_H2 <- health_results %>%
-  rename(lnH = estimate,
-         lnH_ci_lower = ci_lower,
-         lnH_ci_upper = ci_upper,
-         lnH_pval = p_value) %>%
-  left_join(plot_data_health, by = "health_outcome_group") %>% 
-  mutate(
-    H2 = (exp(lnH))^2,
-    I2 = (H2 - 1) / H2 * 100  # Convert to percentage
-  )
-
-ggplot(plot_data2_H2, aes(x = logOR, y = I2, label = health_outcome_group, size = k, color = pval < 0.05 | pval < 0.05)) +
-  geom_point(alpha = 0.5) +
-  geom_text(nudge_y = 0.1,
-            color = "black",
-            size = 3) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
-  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
-  scale_size(range = c(3, 10)) +
-  scale_x_continuous(limits = c(-0.2, 0.2),
-                     breaks = seq(-0.2, 0.2, by = 0.1)) +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
-  labs(
-    x = "Effect size (logOR)",
-    y = "Heterogeneity (I\u00b2 %)",
-    color = "logOR p < 0.05:",
-    size = "k:"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "bottom",
-    legend.box = "vertical",
-    legend.margin = margin(),
-    panel.grid = element_blank()
-  ) +
-  guides(
-    color = guide_legend(order = 1),  # First legend
-    size = guide_legend(order = 2)    # Second legend
-  )
-```
-
-
-## Summary Results
-
-**1)**  We could not test the consistency of results at the PFAS-health outcome associations level because of the low sample size (n = 3 or 4, k = 4 or 5). Instead, we separately tested the consistency of results at the PFAS chemical and health outcome group levels. 
-
-**2)**  At the PFAS chemical level, we found that PFAS that showed an effect size significantly above 0 (i.e., PFOS, PFOA, PFHxS) are all characterized by high heterogeneity.
-
-**3)**  At the health outcome group level, we found that the two groups with effect sizes significantly greater than zero (i.e., Diseases of the circulatory system, diseases related to pregnancy or childbirth) exhibited markedly different levels of heterogeneity. Diseases of the circulatory system showed a high degree of heterogeneity, whereas diseases related to pregnancy or childbirth showed low heterogeneity. We hypothesize that this difference is primarily due to variations in population characteristics across studies. The low heterogeneity observed for pregnancy- or childbirth-related diseases likely stems from the relatively homogeneous populations in the primary studies and meta-analyses (i.e., all female and at similar life stages). In contrast, studies on circulatory system diseases involve more diverse populations, encompassing both genders and a wide range of life stages, resulting in greater heterogeneity.
 
 
 # Sensitivity Analysis
