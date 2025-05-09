@@ -366,10 +366,10 @@ summary(mod_overall_H2)
 ```{r, include=FALSE}
 #Extracting data from the model
 overall_results_H2 <- tibble(
-  lnH = as.numeric(mod_overall$b),
-  lnH_ci_lower = mod_overall$ci.lb,
-  lnH_ci_upper = mod_overall$ci.ub,
-  lnH_p_value = mod_overall$pval
+  lnH = as.numeric(mod_overall_H2$b),
+  lnH_ci_lower = mod_overall_H2$ci.lb,
+  lnH_ci_upper = mod_overall_H2$ci.ub,
+  lnH_p_value = mod_overall_H2$pval
 ) %>% 
   mutate(
     # 1) Compute H2 and its CIs
