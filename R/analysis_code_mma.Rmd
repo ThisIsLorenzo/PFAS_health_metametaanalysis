@@ -21,20 +21,23 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Link to the pre-registered Research Protocol: https://osf.io/dc5mx
 
-Review questions:
+**Review questions:**
 
 1.	How does exposure to per- and polyfluoroalkyl substances (PFAS) affect human health?
 2.	Which PFAS are linked to adverse health effects, and what are the associated health outcomes?
 3.	What are the significant associations between individual PFAS and specific health outcomes, and how strong are these correlations?
 4.	How consistent are the findings regarding PFAS-health outcome associations across different meta-analyses?
 
-Objectives:
+**Objectives:**
 
 1.	To evaluate the magnitude and variability of associations between PFAS exposure and human health outcomes based on multiple meta-analyses.
 2.	To identify specific PFAS (e.g., perfluorooctane sulfonate (PFOS)) significantly associated with adverse health effects and the specific health outcomes impacted.
 3.	To determine significant PFAS-health outcome correlations and assess the strength of these relationships.
 4.	To assess the consistency of findings from objectives 2 and 3 by analyzing the heterogeneity across meta-analyses.
 
+**Research approach:**
+
+In this meta-meta-analysis, we model meta-analytic estimates from existing meta-analyses. We also model heterogeneity metrics reported by those meta-analyses.
 In this analysis workflow, we answer to research question 4 within research questions 1, 2, and 3. In other words, every time we assess the magnitude of results we also assess the consistency of results.
 
 # Packages
@@ -55,7 +58,8 @@ pacman::p_load(tidyr,
                purrr,
                broom,
                clubSandwich,
-               ggrepel
+               ggrepel,
+               kableExtra
                )       
 ```
 
@@ -88,11 +92,15 @@ dat_qual <- ma_e_details %>%
     chemical_id,
     "n-PFOA" = "PFOA",
     "n-PFOS" = "PFOS",
-    "PFHsX" = "PFHxS")) %>% 
+    "PFHsX" = "PFHxS")) %>%
+  mutate(I_squared = as.numeric(I_squared)) %>%
+  mutate(I_squared = if_else(model == "fixed effects model" & I_squared == 0, NA_real_, I_squared)) %>% 
   # Merging 'ma_details' and 'ma_e_details' using the common key 'ma_id'
   left_join(ma_details, by = "ma_id", suffix = c("", ".remove")) %>% 
   select(-ends_with(".remove")) %>% 
-  filter(status != "excluded")
+  filter(status != "excluded") %>% 
+  mutate(ma_journal = tolower(ma_journal),
+         ma_journal = gsub("^\\s+|\\s+$", "", ma_journal))
 ```
 
 # Effect size conversion
@@ -270,6 +278,414 @@ The moderator analysis revealed a statistically significant impact of the effect
 
 To reduce potential bias and improve consistency, I subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 206, number of meta-analyses: 23).
 
+```{r, include=FALSE}
+dat_quant <- dat_quant %>% 
+  filter(ma_es_measure %in% c("Odds ratio", "log Odds ratio"))
+```
+
+
+# Overview of the Dataset
+
+```{r, echo=FALSE, warning=FALSE}
+# Extract the year from 'ma_aut_year'
+pub_year_data <- dat_quant %>%
+  mutate(pub_year = as.numeric(gsub(".*_(\\d{4})", "\\1", ma_aut_year))) %>%
+  distinct(ma_id, .keep_all = TRUE) %>%
+  filter(!is.na(pub_year))
+
+ggplot(pub_year_data, aes(x = pub_year)) +
+  geom_bar(fill = "steelblue") +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.3, size = 3.5) +
+  scale_x_continuous(breaks = seq(min(pub_year_data$pub_year, na.rm = TRUE),
+                                  max(pub_year_data$pub_year, na.rm = TRUE), 
+                                  by = 1)) +
+  labs(title = "Number of Meta-Analyses by Publication Year",
+       x = "Year",
+       y = "Number of Meta-Analyses") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+# Plot top journals by count (e.g., top 10)
+journal_data <- dat_quant %>%
+  distinct(ma_id, .keep_all = TRUE) %>%
+  count(ma_journal, sort = TRUE) %>%
+  top_n(10, n)
+
+ggplot(journal_data, aes(x = reorder(ma_journal, n), y = n)) +
+  geom_col(fill = "darkgreen") +
+  scale_y_continuous(breaks = seq(0, max(journal_data$n) + 1, by = 1),
+                     expand = expansion(mult = c(0, 0.1))) +
+  coord_flip() +
+  labs(title = "Top 10 Journals Publishing PFAS Meta-Analyses",
+       x = "Journal",
+       y = "Number of Meta-Analyses") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+# Prepare the data
+chemical_s_data <- dat_quant %>%
+  distinct(ma_id, .keep_all = TRUE) %>%
+  filter(chemical_s %in% c("one", "multiple")) %>%
+  count(chemical_s)
+
+# Create a named vector to improve labels
+pfas_labels <- c("one" = "Single PFAS", "multiple" = "Multiple PFAS")
+
+# Improved plot
+ggplot(chemical_s_data, aes(x = chemical_s, y = n, fill = chemical_s)) +
+  geom_col(width = 0.6, show.legend = FALSE) +
+  geom_text(aes(label = n), vjust = -0.5, size = 5) +
+  scale_x_discrete(labels = pfas_labels) +
+  scale_fill_manual(values = c("one" = "#0072B2", "multiple" = "#D55E00")) +
+  labs(title = "Number of Meta-Analyses by PFAS Scope",
+       x = "PFAS Scope",
+       y = "Number of Meta-Analyses") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  ylim(0, max(chemical_s_data$n) * 1.1)
+```
+
+```{r, echo=FALSE}
+## Count the number of occurrences of each chemical_id
+chemical_count <- dat_quant %>%
+  filter(!is.na(chemical_id) & chemical_id != "") %>% 
+  group_by(chemical_id) %>%
+  summarise(
+    `Number of meta-analyses` = n_distinct(ma_id),
+    `Number of health outcomes` = n_distinct(health_outcome_type),
+    `Number of health outcome groups` = n_distinct(health_outcome_group),
+    `Number of meta-analytic estimates` = sum(!is.na(ma_point_estimate))
+  ) %>%
+  rename(Chemical = chemical_id) %>%
+  arrange(desc(`Number of meta-analyses`))
+
+# Display table with bold caption
+chemical_count %>%
+  kable(caption = "Table: Chemicals in Meta-Analyses") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+## Count the number of occurrences of each health outcome type
+outcome_type_count <- dat_quant %>%
+  filter(!is.na(health_outcome_type) & health_outcome_type != "") %>% 
+  group_by(health_outcome_type) %>%
+  summarise(
+    `Number of meta-analyses` = n_distinct(ma_id),
+    `Number of chemicals` = n_distinct(chemical_id),
+    `Number of meta-analytic estimates` = sum(!is.na(ma_point_estimate))
+  ) %>%
+  rename(Outcome = health_outcome_type) %>%
+  arrange(desc(`Number of meta-analyses`))
+
+# Display table with bold caption
+outcome_type_count %>%
+  kable(caption = "Table: Health Outcomes in Meta-Analyses") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+## Count the number of occurrences of each health outcome type
+otucome_group_count <- dat_quant %>%
+  filter(!is.na(health_outcome_group) & health_outcome_group != "") %>% 
+  group_by(health_outcome_group) %>%
+  summarise(
+    `Number of meta-analyses` = n_distinct(ma_id),
+    `Number of health outcomes` = n_distinct(chemical_id),
+    `Number of meta-analytic estimates` = sum(!is.na(ma_point_estimate))
+  ) %>%
+  rename("Outcome group" = health_outcome_group) %>%
+  arrange(desc(`Number of meta-analyses`))
+
+# Display table with bold caption
+otucome_group_count %>%
+  kable(caption = "Table: Health Outcomes Groups in Meta-Analyses") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r, include = FALSE}
+# custom function
+source(here("function", "custom.R"))
+
+# get estimate for each cell
+est_dat <- dat_quant %>% group_by(chemical_id, health_outcome_group) %>%
+  mutate(health_outcome_group = recode(
+    health_outcome_group,
+    "Endocrine, nutritional or metabolic diseases" = "Endocrine diseases",
+    "Diseases of the circulatory system" = "Diseases of the\ncirculatory system",
+    "Pregnancy, childbirth or the puerperium" = "Pregnancy or\nchildbirth",
+    "Certain conditions originating in the perinatal period" = "Perinatal period",
+    "Mental, behavioural or neurodevelopmental disorders" = "Neurodevelopmental\ndisorders",
+    "Diseases of the musculoskeletal system or connective tissue" = "Diseases of the\nmusculoskeletal system",
+    "Symptoms, signs or clinical findings, not elsewhere classified" = "Symptoms not\nelsewhere classified",
+    "Diseases of the respiratory system" = "Diseases of the\nrespiratory system",
+    "Diseases of the genitourinary system" = "Diseases of the\ngenitourinary system"
+  )) %>% 
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
+# traditional map with the number of study
+est_dat$chemical_id <- as.factor(est_dat$chemical_id)
+
+Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Group") +
+  scale_size(range = c(8,22)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+  labs(caption = "The value in the cell is the number of studies") + 
+   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
+         axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title = element_text(size = 12, face = "bold")) 
+
+Box1_map1
+
+```
+
+```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
+# traditional map with the number of effect size
+Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_es)) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[3]) + 
+  labs(x = "PFAS", y = "Health Outcome Group") +
+  scale_size(range=c(8,22)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal',  
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_es)), size = 4, color = "gray10") +
+  labs(caption = "The value in the cell is the number of effect sizes") +
+   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
+         axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 12),
+         axis.title = element_text(face = "bold", size = 12))
+
+Box1_map2
+```
+
+-  A = Diseases related to pregnancy or childbirth
+-  B = Neoplasms
+-  C = Neurodevelopmental disorders
+-  D = Endocrine diseases
+-  E = Diseases of the circulatory system
+-  F = Diseases related to the perinatal period
+
+```{r, include=FALSE}
+est_dat2 <- dat_quant %>%
+  filter(health_outcome_group == "Pregnancy, childbirth or the puerperium")
+
+est_dat2 <- est_dat2 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+   theme( axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title.x = element_blank(),
+         axis.title.y = element_text(size = 12, face = "bold")) 
+
+Box2_map1
+```
+
+```{r, include=FALSE}
+est_dat3 <- dat_quant %>% 
+  filter(health_outcome_group == "Neoplasms")
+
+est_dat3 <- est_dat3 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title.x = element_blank(),
+         axis.title.y = element_blank()) 
+
+Box2_map2
+```
+
+```{r, include=FALSE}
+est_dat4 <- dat_quant %>% 
+  filter(health_outcome_group == "Mental, behavioural or neurodevelopmental disorders")
+
+est_dat4 <- est_dat4 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map3 <- ggplot(est_dat4, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title.x = element_blank(),
+         axis.title.y = element_text(size = 12, face = "bold")) 
+
+Box2_map3
+```
+
+```{r, include=FALSE}
+est_dat5 <- dat_quant %>% 
+  filter(health_outcome_group == "Endocrine, nutritional or metabolic diseases")
+
+est_dat5 <- est_dat5 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map4 <- ggplot(est_dat5, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title.x = element_blank(),
+         axis.title.y = element_blank()) 
+
+Box2_map4
+```
+
+```{r, include=FALSE}
+est_dat6 <- dat_quant %>% 
+  filter(health_outcome_group == "Diseases of the circulatory system")
+
+est_dat6 <- est_dat6 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map5 <- ggplot(est_dat6, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title = element_text(size = 12, face = "bold")) 
+
+Box2_map5
+```
+
+```{r, include=FALSE}
+est_dat7 <- dat_quant %>% 
+  filter(health_outcome_group == "Certain conditions originating in the perinatal period")
+
+est_dat7 <- est_dat7 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
+```
+
+```{r,include=FALSE}
+Box2_map6 <- ggplot(est_dat7, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
+  labs(x = "PFAS", y = "Health Outcome Type") +
+  scale_size(range=c(8,15)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  guides(size = "none") +
+  theme(legend.position='top', 
+        legend.justification='right',
+        legend.direction='horizontal', 
+        axis.text = element_text(color = "black"),
+        axis.title = element_text(color = "black")) +
+  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
+  labs(caption = "The value in the cell is the number of studies") + 
+   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
+         axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text = element_text(size = 11),
+         axis.title.x = element_text(size = 12, face = "bold"),
+         axis.title.y = element_blank()) 
+
+Box2_map6
+```
+
+
+```{r, echo=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
+plot_grid(Box2_map1, Box2_map2, Box2_map3, Box2_map4, Box2_map5, Box2_map6, 
+          labels = c('A','B','C','D','E','F'),
+          label_size = 14,
+          nrow = 3,
+          ncol = 2)
+```
+
 # First Research Question
 
 **Question:** How does exposure to per- and polyfluoroalkyl substances (PFAS) affect human health?
@@ -287,9 +703,6 @@ Random effect structure:
 - **~1 | ma_e_id** introduces a random intercept for each effect size estimate within a meta-analysis. It accounts for non-independence of estimates within the same meta-analysis.
 
 ```{r, results=FALSE}
-dat_quant <- dat_quant %>% 
-  filter(ma_es_measure %in% c("Odds ratio", "log Odds ratio"))
-
 VCV <- impute_covariance_matrix(vi = dat_quant$se^2,  
                                 cluster = dat_quant$pair,
                                 r = 0.5)
@@ -300,6 +713,8 @@ mod_overall <- rma.mv(yi = logOR,
                                       ~1|ma_e_id), 
                         data = dat_quant,
                         test = "t")
+
+I2_logOR <- orchaRd::i2_ml(mod_overall)
 ```
 
 
@@ -344,7 +759,7 @@ dat_H2 <- dat_quant %>%
   mutate(chemical_id = droplevels(factor(chemical_id)))
 
 # Create the VCV matrix assuming rho = 0.5 for within-pair correlation
-VCV_H2 <- impute_covariance_matrix(vi = dat_H2$se^2,  
+VCV_H2 <- impute_covariance_matrix(vi = dat_H2$SElnH^2,  
                                    cluster = dat_H2$pair,
                                    r = 0.5)
 ```
@@ -388,8 +803,7 @@ I2_text <- paste0("I² = ", round(overall_results_H2$I2, 1),
                   "–", round(overall_results_H2$I2_ci_upper, 1), "%]")
 ```
 
-
-```{r, echo=FALSE}
+```{r, include=FALSE}
 overall_plot <- orchard_plot(
   object = mod_overall,
   group = "ma_id",
@@ -405,11 +819,13 @@ overall_plot <- orchard_plot(
   # Add faded green background for x > 0
   annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
            fill = "red", alpha = 0.08) + 
-  annotate("text", 
-           x = Inf, y = Inf, 
-           label = I2_text, 
-           hjust = 1.1, vjust = 1.5, 
-           size = 4.5, fontface = "italic")  +
+  annotate(geom = "text",
+           x = 1.3,
+           y = -1, 
+           label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
+           size = 4,
+           color ="black",
+           parse = TRUE) +
   theme(
     legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
     legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
@@ -420,16 +836,52 @@ overall_plot <- orchard_plot(
 print(overall_plot)
 ```
 
-*Overall association between PFAS exposure and adverse health outcomes, expressed as a log Odds Ratio (logOR). Positive values indicate increased odds of adverse outcomes with higher PFAS exposure. This estimate is based on a meta-meta-analysis of 207 meta-analytic effect sizes (k) drawn from 23 published meta-analyses. The pooled effect size is shown as a black circle, with thicker horizontal bars indicating its 95% confidence interval and thinner bars representing the 95% prediction interval. Light-blue bubbles depict individual effect sizes, scaled by their precision (inverse of the standard error; see legend). The number in parentheses denotes the number of studies contributing to the overall effect. A negative association is shown in the green-shaded area (logOR < 0), while a positive association appears in the red-shaded area (logOR > 0).*
-
 ```{r, include=FALSE}
-# I²
-i2_results_no_transf <- i2_ml(mod_overall)
-print(i2_results_no_transf)
-# Print I² values
-cat("Heterogeneity (I\u00b2 between studies):", round(i2_results_no_transf["I2_ma_id"], 1), "%\n")
-cat("Heterogeneity (I\u00b2 within studies):", round(i2_results_no_transf["I2_ma_e_id"], 1), "%\n")
+I2_H2 <- orchaRd::i2_ml(mod_overall_H2)
+
+overall_plot_H2 <- orchard_plot(
+  object = mod_overall_H2,
+  group = "ma_id",
+  xlab = "lnH",
+  transfm = "none",
+  trunk.size = 0.8,
+  branch.size = 2.5,
+  alpha = 1
+) + 
+  # Add faded red background for x < 0
+  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0.3466, 
+  #          fill = "green", alpha = 0.08) + 
+  # # Add faded green background for x > 0
+  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0.3466, ymax = Inf, 
+  #          fill = "red", alpha = 0.08) + 
+  annotate(geom = "text",
+           x = 1.3,
+           y = 2, 
+           label = paste0("italic(I)^2 ~ lnH == ", round(I2_H2[1],1)),
+           size = 4,
+           color ="black",
+           parse = TRUE) +
+  theme(
+    legend.position.inside = c(0.55, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
+    legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
+    legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
+    legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
+  )
+
+print(overall_plot_H2)
 ```
+
+```{r, echo=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
+plot_grid(overall_plot, overall_plot_H2, 
+          labels = c('A','B'),
+          label_size = 14,
+          nrow = 2,
+          ncol = 1)
+```
+
+*A) Overall association between PFAS exposure and adverse health outcomes, expressed as a log Odds Ratio (logOR). Positive values indicate increased odds of adverse outcomes with higher PFAS exposure. This estimate is based on a meta-meta-analysis of 207 meta-analytic effect sizes (k) drawn from 23 published meta-analyses. The pooled effect size is shown as a black circle, with thicker horizontal bars indicating its 95% confidence interval and thinner bars representing the 95% prediction interval. Light-blue bubbles depict individual effect sizes, scaled by their precision (inverse of the standard error; see legend). The number in parentheses denotes the number of studies contributing to the overall effect. A negative association is shown in the green-shaded area (logOR < 0), while a positive association appears in the red-shaded area (logOR > 0).*
+
+*B) Overall estimate of heterogeneity (natural log-transformed H) across meta-analyses assessing PFAS-associated health outcomes. Each point represents an individual effect size, scaled by precision (1/SE), with the pooled effect size shown as a black circle. Thicker horizontal bars indicate the 95% confidence interval and thinner bars represent the 95% prediction interval. The number in parentheses denotes the number of studies contributing to the overall effect. The dashed vertical line at zero indicates no heterogeneity. *
 
 ```{r, include=FALSE}
 merged_overall_results <- bind_cols(overall_results, overall_results_H2)
@@ -457,9 +909,10 @@ ggplot(merged_overall_results, aes(x = lnOR, y = I2)) +
 
 ## Summary Results RQ1
 
-**1)**  Across all meta-analyses included in our synthesis, exposure to PFAS was associated with a statistically significant increase in the odds of experiencing adverse health outcomes. On average, PFAS exposure was linked to a 5.8% increase in risk (95% CI: 3.1%–8.6%), suggesting a modest but measurable impact on human health.
+**1)**  Across all meta-analyses included in our synthesis, exposure to PFAS was associated with a statistically significant increase in the odds of experiencing adverse health outcomes. On average, PFAS exposure was linked to a 5.8% increase in risk (95% CI: 3.1%–8.6%), suggesting a modest but measurable impact on human health. We observed substantial overall heterogeneity (I² logOR= 86.9%), with the majority (71.7%) attributable to differences among effect sizes within individual meta-analyses. This suggests that variation in reported associations is driven more by heterogeneity in primary study findings than by systematic differences across meta-analyses.
 
-**2)**  The consistency of findings varied depending on the level of analysis. While individual meta-analyses generally reported low within-review heterogeneity (mean I² ≈ 15%), our overall model revealed high heterogeneity (I² = 87%) across all meta-analyses. Most of this heterogeneity arose within, rather than between, meta-analyses. This discrepancy highlights that although individual reviews often appear internally consistent, notable variability exists when their results are aggregated. Such inconsistency likely reflects differences in study populations, PFAS exposure measurements, and methodological quality across reviews.
+**2)**  The average reported heterogeneity across PFAS-related meta-analyses was moderate (average lnH = 0.53 = I² ≈ 42%), but the amount of heterogeneity in these heterogeneity estimates themselves was substantial (I² lnH ≈ 89%). Approximately half of this variance (49%) was attributable to differences between meta-analyses, suggesting that some research syntheses consistently report more heterogeneity than others
+
 
 # Second Research Question
 
@@ -654,10 +1107,10 @@ ggplot(plot_data_chemical_merged, aes(x = logOR, y = I2, label = chemical_id, si
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   
   # Quadrant text
-  annotate("text", x = -0.095, y = 95, label = "harmless\nlow consistency", hjust = 0, size = 4) +
-  annotate("text", x = 0.06, y = 95, label = "harmful\nlow consistency", hjust = 0, size = 4) +
-  annotate("text", x = 0.06, y = 3, label = "harmful\nhigh consistency", hjust = 0, size = 4) +
-  annotate("text", x = -0.095, y = 3, label = "harmless\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
 
   scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
   scale_size(range = c(3, 12)) +
@@ -919,10 +1372,10 @@ ggplot(plot_data_health_merged, aes(x = logOR, y = I2, label = health_outcome_gr
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   
   # Quadrant text
-  annotate("text", x = -0.095, y = 95, label = "harmless\nlow consistency", hjust = 0, size = 4) +
-  annotate("text", x = 0.06, y = 95, label = "harmful\nlow consistency", hjust = 0, size = 4) +
-  annotate("text", x = 0.06, y = 3, label = "harmful\nhigh consistency", hjust = 0, size = 4) +
-  annotate("text", x = -0.095, y = 3, label = "harmless\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 4) +
+  annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
+  annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
 
   scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
   scale_size(range = c(3, 12)) +
@@ -984,297 +1437,6 @@ ggplot(plot_data_health_merged, aes(x = logOR, y = I2, label = health_outcome_gr
 **Question:** What are the significant associations between individual PFAS and specific health outcomes, and how strong are these correlations?
 
 **Objective:** To determine significant PFAS-health outcome correlations and assess the strength of these relationships.
-
-BUT,
-
-Before addressing our third research question through quantitative analysis, we first perform a qualitative assessment to determine the number of meta-analyses and effect sizes available for each combination of individual PFAS and health outcome group.
-
-## Qualitative Synthesis
-
-### Overview of the evidence
-
-The following two graphs show the number of meta-analyses for each combination of PFAS-health outcome group (first graph) and the number of effect sizes for the same combinations (second graph).
-
-These two graphs are useful for visualizing the evidence base across PFAS–health outcome combinations. The first graph helps identify which health outcomes have been more frequently addressed at the meta-analysis level, while the second graph shows the volume of individual effect sizes contributing to each combination. Together, they highlight areas with strong meta-analytic support and reveal gaps in the literature where data may be sparse or underexplored.
-
-We use the personalized function *custom_meta_aggregate()* to perform a meta-analysis and to build the data frame used for plotting the graphs. The results of the meta-analysis will be showed in the following section "Quantitative synthesis". 
-
-```{r, out.height=600, out.width=1000, fig.width=11, fig.height=10}
-# custom function
-source(here("function", "custom.R"))
-
-# get estimate for each cell
-est_dat <- dat_quant %>% group_by(chemical_id, health_outcome_group) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
-# traditional map with the number of study
-est_dat$chemical_id <- as.factor(est_dat$chemical_id)
-
-Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Group") +
-  scale_size(range = c(8,20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of studies") + 
-   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title = element_text(size = 12, face = "bold")) 
-
-Box1_map1
-
-```
-
-```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
-# traditional map with the number of effect size
-Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_es)) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[3]) + 
-  labs(x = "PFAS", y = "Health Outcome Group") +
-  scale_size(range=c(8,20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal',  
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_es)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of effect sizes") +
-   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 12),
-         axis.title = element_text(face = "bold", size = 12))
-
-Box1_map2
-```
-
-Five groups out of eleven did not have more than one meta-analytic estimate for any chemical compound.
-
-Now, we focus on the 6 groups that have at least 2 meta-analyses for any PFAS chemical. We look at the specific health outcome type investigated in the meta-analyses.
-
-### Focus on health outcomes groups from at least 2 meta-analyses
-
-Health outcome groups:
-
--  A = Diseases related to pregnancy or childbirth
--  B = Neoplasms
--  C = Neurodevelopmental disorders
--  D = Endocrine diseases
--  E = Diseases of the circulatory system
--  F = Diseases related to the perinatal period
-
-```{r, include=FALSE}
-est_dat2 <- dat_quant %>% 
-  filter(health_outcome_group == "Pregnancy or\nchildbirth")
-
-est_dat2 <- est_dat2 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-   theme( axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title.x = element_blank(),
-         axis.title.y = element_text(size = 12, face = "bold")) 
-
-Box2_map1
-```
-
-```{r, include=FALSE}
-est_dat3 <- dat_quant %>% 
-  filter(health_outcome_group == "Neoplasms")
-
-est_dat3 <- est_dat3 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title.x = element_blank(),
-         axis.title.y = element_blank()) 
-
-Box2_map2
-```
-
-```{r, include=FALSE}
-est_dat4 <- dat_quant %>% 
-  filter(health_outcome_group == "Neurodevelopmental\ndisorders")
-
-est_dat4 <- est_dat4 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map3 <- ggplot(est_dat4, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title.x = element_blank(),
-         axis.title.y = element_text(size = 12, face = "bold")) 
-
-Box2_map3
-```
-
-```{r, include=FALSE}
-est_dat5 <- dat_quant %>% 
-  filter(health_outcome_group == "Endocrine diseases")
-
-est_dat5 <- est_dat5 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map4 <- ggplot(est_dat5, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title.x = element_blank(),
-         axis.title.y = element_blank()) 
-
-Box2_map4
-```
-
-```{r, include=FALSE}
-est_dat6 <- dat_quant %>% 
-  filter(health_outcome_group == "Diseases of the\ncirculatory system")
-
-est_dat6 <- est_dat6 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map5 <- ggplot(est_dat6, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title = element_text(size = 12, face = "bold")) 
-
-Box2_map5
-```
-
-```{r, include=FALSE}
-est_dat7 <- dat_quant %>% 
-  filter(health_outcome_group == "Perinatal period")
-
-est_dat7 <- est_dat7 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
-Box2_map6 <- ggplot(est_dat7, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
-  geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
-  labs(x = "PFAS", y = "Health Outcome Type") +
-  scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
-  theme_bw() +
-  guides(size = "none") +
-  theme(legend.position='top', 
-        legend.justification='right',
-        legend.direction='horizontal', 
-        axis.text = element_text(color = "black"),
-        axis.title = element_text(color = "black")) +
-  geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of studies") + 
-   theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text = element_text(size = 11),
-         axis.title.x = element_text(size = 12, face = "bold"),
-         axis.title.y = element_blank()) 
-
-Box2_map6
-```
-
-
-```{r, echo=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
-plot_grid(Box2_map1, Box2_map2, Box2_map3, Box2_map4, Box2_map5, Box2_map6, 
-          labels = c('A','B','C','D','E','F'),
-          label_size = 14,
-          nrow = 3,
-          ncol = 2)
-```
-
-## Quantitative Synthesis
-
-Now that I have a clear understanding of the available evidence, I can plot the results of the subgroup analyses. I splitted the dataset by two grouping variables: chemical_id and health_outcome_group. For each combination of these two groups, I'm running the meta-analysis (using the *custom_meta_aggregate()* function). This allows me to obtain separate effect size estimates for each chemical-health outcome subgroup.
 
 ```{r, echo=FALSE, out.height=600, out.width=1000, fig.width=10, fig.height=7}
 est_dat <- est_dat %>%
