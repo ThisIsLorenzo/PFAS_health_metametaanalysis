@@ -1045,7 +1045,7 @@ overall_point <- data.frame(
   ma_e_id = "Overall"
 )
 
-# Calculations for prediction intervals
+# Calculations for prediction intervals (logOR)
 # Extract model components
 mu <- as.numeric(mod_overall$b)  # overall effect size (log OR)
 se <- mod_overall$se             # standard error
@@ -1067,6 +1067,28 @@ pred_int <- data.frame(
   OR = overall_point$OR
 )
 
+# Calculations for prediction intervals (lnH)
+# Extract model components
+mu_H2 <- as.numeric(mod_overall_H2$b)    # overall effect size (lnH)
+se_H2 <- mod_overall_H2$se               # standard error
+tau2_H2 <- sum(mod_overall_H2$sigma2)    # total between-study variance
+k_H2 <- length(mod_overall_H2$yi)        # number of effect sizes
+df_H2 <- k_H2 - length(mod_overall_H2$sigma2)  # conservative degrees of freedom
+
+# Calculate t critical value
+t_crit_H2 <- qt(0.975, df = df_H2)
+
+# Prediction interval on log scale
+pred_lower_H2 <- mu_H2 - t_crit_H2 * sqrt(tau2_H2 + se_H2^2)
+pred_upper_H2 <- mu_H2 + t_crit_H2 * sqrt(tau2_H2 + se_H2^2)
+
+# Convert to I-squared scale
+pred_int_I2 <- data.frame(
+  I2_pred_lower = pmin(100, pmax(0, (exp(2 * pred_lower_H2[1]) - 1)/exp(2 * pred_lower_H2[1])  * 100)),
+  I2_pred_upper = pmin(100, pmax(0, (exp(2 * pred_upper_H2[1]) - 1)/exp(2 * pred_upper_H2[1])  * 100)),
+  I2 = pmin(100, pmax(0, (exp(2 * mu_H2[1]) - 1)/exp(2 * mu_H2[1])  * 100))
+)
+
 ```
 
 
@@ -1075,7 +1097,10 @@ galaxy_data$col <- rep("col", nrow(galaxy_data))
 # Plot
 galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
   # Individual points (no error bars)
-  geom_point(aes(fill = col, color = col), shape = 21, alpha = 0.5) +
+  geom_point(aes(color = "data"), 
+             shape = 21, 
+             fill = "#4A90E2", 
+             alpha = 0.6) +
 
   # Overall horizontal error bar (for OR)
   geom_errorbarh(
@@ -1085,11 +1110,22 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
     size = 1.3
   ) +
   
+  # Prediction interval (OR)
   geom_errorbarh(
     data = pred_int,
     aes(xmin = OR_pred_lower, xmax = OR_pred_upper, y = overall_point$I2),
     height = 1.5,
     color = "black",
+    size = 0.5,
+    linetype = "solid"
+  ) +
+  
+  # Prediction interva; (I-squared)
+  geom_errorbar(
+    data = pred_int_I2,
+    aes(ymin = I2_pred_lower, ymax = I2_pred_upper, x = overall_point$OR),
+    color = "black",
+    width = 0.03, 
     size = 0.5,
     linetype = "solid"
   ) +
@@ -1131,9 +1167,9 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
   # Axes
   scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.5)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
-  
-  scale_color_manual(values = "grey50") +
-  scale_fill_manual(values = "grey50") +
+  scale_color_manual(values = c("data" = "black"),
+                     guide = guide_legend(override.aes = list(fill = NA))) +
+  scale_fill_manual(values = "#4A90E2") +
   guides(fill = "none", color = "none") +
 
   # Labels
@@ -1151,7 +1187,10 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
         axis.title = element_text(size = 14),
         axis.text = element_text(size = 12))
 
-ggMarginal(galaxy_plot , groupColour = T, groupFill = T, type = "histogram")
+ggMarginal(galaxy_plot ,
+           type = "histogram",
+           fill = "#FFC000",
+           color = "black")
 ```
 
 ```{r, include=FALSE, eval=FALSE}
@@ -1360,10 +1399,12 @@ forest_plot_chemical
 ```
 
 ```{r, echo=FALSE}
-galaxy_chemicals <- ggplot(plot_data_chemical_merged, aes(x = OR, y = I2, label = chemical_id, size = k, color = pval < 0.05 | pval < 0.05)) +
-  geom_point(alpha = 0.5) +
+plot_data_chemical_merged$significant <- plot_data_chemical_merged$pval < 0.05
+
+galaxy_chemicals <- ggplot(plot_data_chemical_merged, aes(x = OR, y = I2, label = chemical_id, size = k, color = significant, alpha = significant)) +
+  geom_point() +
   geom_text_repel(size = 6, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "firebrick") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
@@ -1374,7 +1415,8 @@ galaxy_chemicals <- ggplot(plot_data_chemical_merged, aes(x = OR, y = I2, label 
   # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
   # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
 
-  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
+  scale_color_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 1)) +
   scale_size(range = c(8, 13)) +
   scale_x_continuous(limits = c(0.85, 1.15), breaks = seq(0.85, 1.15, by = 0.15)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
@@ -1646,10 +1688,12 @@ forest_plot_health2
 ```
 
 ```{r, echo=FALSE}
-galaxy_health <- ggplot(plot_data_health_merged, aes(x = OR, y = I2, label = health_outcome_group, size = k, color = pval < 0.05 | pval < 0.05)) +
-  geom_point(alpha = 0.5) +
+plot_data_health_merged$significant <- plot_data_health_merged$pval < 0.05
+
+galaxy_health <- ggplot(plot_data_health_merged, aes(x = OR, y = I2, label = health_outcome_group, size = k, color = significant, alpha = significant)) +
+  geom_point() +
   geom_text_repel(size = 6, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "firebrick") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
@@ -1660,7 +1704,8 @@ galaxy_health <- ggplot(plot_data_health_merged, aes(x = OR, y = I2, label = hea
   # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
   # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
 
-  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
+  scale_color_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 1)) +
   scale_size(range = c(8, 13)) +
   scale_x_continuous(limits = c(0.85, 1.15), breaks = seq(0.85, 1.15, by = 0.15)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
