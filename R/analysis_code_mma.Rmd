@@ -99,10 +99,11 @@ dat_qual <- ma_e_details %>%
     "n-PFOS" = "PFOS",
     "PFHsX" = "PFHxS")) %>%
   mutate(I_squared = as.numeric(I_squared)) %>%
-  mutate(I_squared = if_else(model == "fixed effects model" & I_squared == 0, NA_real_, I_squared)) %>% 
+  #mutate(I_squared = if_else(model == "fixed effects model" & I_squared == 0, NA_real_, I_squared)) %>% 
   # Merging 'ma_details' and 'ma_e_details' using the common key 'ma_id'
   left_join(ma_details, by = "ma_id", suffix = c("", ".remove")) %>% 
   select(-ends_with(".remove")) %>% 
+  # Removing excluded studies
   filter(status != "excluded") %>% 
   mutate(ma_journal = tolower(ma_journal),
          ma_journal = gsub("^\\s+|\\s+$", "", ma_journal))
@@ -601,7 +602,7 @@ Box2_map4 <- ggplot(est_dat5, aes(x = chemical_id, y = health_outcome_type, size
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
   scale_size(range=c(8,15)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + # 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + 
   scale_y_discrete(labels = function(x) str_wrap(x, width = 10)) +
   theme_bw() +
   guides(size = "none") +
@@ -784,18 +785,25 @@ overall_results <- tibble(
 
 ```{r, results=FALSE}
 # 1. Calculate H², lnH², and SElnH
-dat_H2 <- dat_quant %>%
-  mutate(n_ps_e = if_else(is.na(n_ps_e), n_ps, n_ps_e)) %>% #For each row, checks if n_ps_e (i.e., number of primary study estimates) is NA. If it is, replaces it with the value from n_ps (number of primary studies).
-  filter(n_ps_e > 2) %>%  # Explicitly exclude cases where SElnH would be invalid
+dat_lnH <- dat_quant %>%
+  mutate(k = if_else(is.na(n_ps_e), n_ps, n_ps_e)) %>% #For each row, checks if n_ps_e (i.e., number of primary study estimates) is NA. If it is, replaces it with the value from n_ps (number of primary studies).
+  filter(k > 2) %>%  # Explicitly exclude cases where SElnH would be invalid
   mutate(
     I_squared = as.numeric(I_squared),
+    # Calculate I² as a proportion
+    I_squared_prop = I_squared / 100,
     # Calculate H² from I²
-    H2 = 1 / (1 - (I_squared / 100)),
+    H2 = 1 / (1 - I_squared_prop),
     lnH = log(sqrt(H2)),
     
-    # Calculate SElnH
-    k = n_ps_e, # number of effect sizes (primary study estimates)
-    SElnH = sqrt((1 / (2 * (k - 2))) * (1 - (1 / (3 * (k - 2))^2))),
+    # Ensure Q is available — calculate from H² and k
+    Q = H2 * (k - 1),
+
+    # Compute SElnH using different formulas based on whether Q > k according to Higging & Thompson 2002
+    SElnH = case_when(
+      Q > k ~ 0.5 * ((log(Q) - log(k - 1)) / (sqrt(2 * Q) - sqrt(2 * k - 3))),
+      TRUE ~ sqrt((1 / (2 * (k - 2))) * (1 - (1 / (3 * (k - 2))^2)))
+    ),
 
     # Calculate Confidence Intervals for lnH
     lnH_ci_lower = lnH - 1.96 * SElnH,
@@ -808,31 +816,119 @@ dat_H2 <- dat_quant %>%
   mutate(chemical_id = droplevels(factor(chemical_id)))
 
 # Create the VCV matrix assuming rho = 0.5 for within-pair correlation
-VCV_H2 <- impute_covariance_matrix(vi = dat_H2$SElnH^2,  
-                                   cluster = dat_H2$pair,
+dat_lnH <- dat_lnH[!is.na(dat_lnH$lnH),]
+VCV_lnH <- impute_covariance_matrix(vi = dat_lnH$SElnH^2,  
+                                   cluster = dat_lnH$pair,
                                    r = 0.5)
 ```
 
-
-```{r, warning=FALSE}
-mod_overall_H2 <- rma.mv(
+```{r}
+mod_overall_lnH <- rma.mv(
   yi = lnH, 
-  V = VCV_H2, 
+  V = VCV_lnH, 
   random = list(~1|ma_id,
                 ~1|ma_e_id), 
-  data = dat_H2,
+  data = dat_lnH,
   test = "t"
 )
 
-summary(mod_overall_H2)
+summary(mod_overall_lnH)
+
+wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
+df <- cbind(dat_lnH, wi)
+plot(df$lnH, df$wi)
+
+rma.mv(
+  yi = lnH, 
+  V = VCV_lnH, 
+  mods = k,
+  random = list(~1|ma_id,
+                ~1|ma_e_id), 
+  data = dat_lnH,
+  test = "t"
+)
+```
+
+FROM YEFENG:
+
+```{r, eval=FALSE, warning=FALSE}
+dat <- dat_lnH[!is.na(dat_lnH$lnH),]
+dat <- dat %>% 
+  mutate(I2 = I2/100,
+         I2_ci_lower = I2_ci_lower/100,
+         I2_ci_upper = I2_ci_upper/100) %>%
+  mutate(I2_se = (I2_ci_upper-I2_ci_lower)/(2*1.96))
+  
+
+VCV_lnH_try <- impute_covariance_matrix(vi = dat$I2_se^2,  
+                                   cluster = dat$pair,
+                                   r = 0.5)
+
+mod_overall_lnH_try <- rma.mv(
+  yi = I2, 
+  V = VCV_lnH_try, 
+  random = list(~1|ma_id,
+                ~1|ma_e_id), 
+  data = dat,
+  test = "t"
+)
+
+summary(mod_overall_lnH_try)
+
+wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH_try, type = "diagonal") %>% as.numeric())
+df <- cbind(dat, wi)
+plot(df$I2, df$wi)
+
+
+
+
+mod_overall_lnH <- rma.mv(
+  yi = lnH + 0.01, 
+  V = VCV_lnH, 
+  random = list(~1|ma_id,
+                ~1|ma_e_id), 
+  data = dat,
+  test = "t"
+)
+
+library(car)
+
+dat <- dat %>% mutate(I2_p = I2 / 100,
+                      I2_se_p = I2_se / 100)
+
+mod_overall_lnH <-  rma.mv(
+  yi = I2, 
+  V = I2_se^2, 
+  random = list(~1|ma_id,
+                ~1|ma_e_id), 
+  data = dat,
+  test = "t"
+)
+
+mod_overall_lnH <-  rma.mv(
+  yi = log(I2_p + 0.001), 
+  V = log(I2_se^2 + 0.001), 
+  random = list(~1|ma_id,
+                ~1|ma_e_id), 
+  data = dat,
+  test = "t"
+)
+
+
+
+summary(mod_overall_lnH)
+
+wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
+df <- cbind(dat, wi)
+plot(df$lnH, df$wi)
 ```
 
 
 ```{r, include=FALSE}
 # Forest plot lnH
 
-dat_H2$ma_e_id <- factor(dat_H2$ma_e_id) 
-dat_H2 <- dat_H2 %>% 
+dat_lnH$ma_e_id <- factor(dat_lnH$ma_e_id) 
+dat_lnH <- dat_lnH %>% 
   mutate(
     # 1) Compute H2 and its CIs
      H2        = exp(2 * lnH),
@@ -847,16 +943,16 @@ dat_H2 <- dat_H2 %>%
   )
 
 overall_value_I2 <- data.frame(
-  I2           = pmin(100, pmax(0, (exp(2 * mod_overall_H2$b[1]) - 1)/exp(2 * mod_overall_H2$b[1])  * 100)),
+  I2           = pmin(100, pmax(0, (exp(2 * mod_overall_lnH$b[1]) - 1)/exp(2 * mod_overall_lnH$b[1])  * 100)),
   ma_e_id = "Overall",
-  I2_ci_lower  = pmin(100, pmax(0, (exp(2 * mod_overall_H2$ci.lb) - 1)/exp(2 * mod_overall_H2$ci.lb) * 100)),
-  I2_ci_upper  = pmin(100, pmax(0, (exp(2 * mod_overall_H2$ci.ub) - 1)/exp(2 * mod_overall_H2$ci.ub) * 100))
+  I2_ci_lower  = pmin(100, pmax(0, (exp(2 * mod_overall_lnH$ci.lb) - 1)/exp(2 * mod_overall_lnH$ci.lb) * 100)),
+  I2_ci_upper  = pmin(100, pmax(0, (exp(2 * mod_overall_lnH$ci.ub) - 1)/exp(2 * mod_overall_lnH$ci.ub) * 100))
 )
 ```
 
 
 ```{r, include=FALSE}
-fp_lnH <- ggplot(dat_H2, aes(x = I2, y = ma_e_id)) +
+fp_lnH <- ggplot(dat_lnH, aes(x = I2, y = ma_e_id)) +
   geom_point(shape = 18, size = 4) +  # Point estimates
   geom_errorbarh(aes(xmin = I2_ci_lower, xmax = I2_ci_upper), 
                  height = 0.2) +      # Confidence intervals
@@ -874,7 +970,7 @@ fp_lnH <- ggplot(dat_H2, aes(x = I2, y = ma_e_id)) +
        title = "Forest Plot of Heterogeneity") +
   theme_minimal() +
   theme(panel.grid.major.y = element_blank()) + # Cleaner horizontal lines
-  scale_y_discrete(limits = rev(c(levels(dat_H2$ma_e_id), "Overall")))
+  scale_y_discrete(limits = rev(c(levels(dat_lnH$ma_e_id), "Overall")))
 ```
 
 ```{r, include=FALSE}
@@ -888,10 +984,10 @@ plot_grid(fp_OR, fp_lnH,
 ```{r, include=FALSE}
 #Extracting data from the model
 overall_results_H2 <- tibble(
-  lnH = as.numeric(mod_overall_H2$b),
-  lnH_ci_lower = mod_overall_H2$ci.lb,
-  lnH_ci_upper = mod_overall_H2$ci.ub,
-  lnH_p_value = mod_overall_H2$pval
+  lnH = as.numeric(mod_overall_lnH$b),
+  lnH_ci_lower = mod_overall_lnH$ci.lb,
+  lnH_ci_upper = mod_overall_lnH$ci.ub,
+  lnH_p_value = mod_overall_lnH$pval
 ) %>% 
   mutate(
     # 1) Compute H2 and its CIs
@@ -910,7 +1006,31 @@ I2_text <- paste0("I² = ", round(overall_results_H2$I2, 1),
                   "–", round(overall_results_H2$I2_ci_upper, 1), "%]")
 ```
 
-```{r, include=FALSE}
+```{r}
+overall_plot <- orchard_plot(
+  object = mod_overall,
+  group = "ma_id",
+  xlab = "logOR",
+  trunk.size = 0.8,
+  branch.size = 2.5,
+  alpha = 0.8
+) + 
+  scale_fill_manual(values = "#4A90E2") +
+  #scale_colour_manual(values = "black") +
+  annotate(geom = "text",
+           x = 1.3,
+           y = -1, 
+           label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
+           size = 4,
+           color ="black",
+           parse = TRUE)
+
+overall_plot
+```
+
+
+OLD:
+```{r, eval=FALSE}
 overall_plot <- orchard_plot(
   object = mod_overall,
   group = "ma_id",
@@ -918,14 +1038,15 @@ overall_plot <- orchard_plot(
   transfm = "none",
   trunk.size = 0.8,
   branch.size = 2.5,
-  alpha = 1
+  alpha = 1,
+  colour = "#4A90E2"
 ) + 
-  # Add faded red background for x < 0
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
-           fill = "green", alpha = 0.08) + 
-  # Add faded green background for x > 0
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
-           fill = "red", alpha = 0.08) + 
+  # # Add faded red background for x < 0
+  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
+  #          fill = "green", alpha = 0.08) + 
+  # # Add faded green background for x > 0
+  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
+  #          fill = "red", alpha = 0.08) + 
   annotate(geom = "text",
            x = 1.3,
            y = -1, 
@@ -934,9 +1055,9 @@ overall_plot <- orchard_plot(
            color ="black",
            parse = TRUE) +
   theme(
-    legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
-    legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
-    legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
+    # legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
+    # legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
+    # legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
     legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
   )
 
@@ -944,10 +1065,10 @@ print(overall_plot)
 ```
 
 ```{r, include=FALSE}
-I2_H2 <- orchaRd::i2_ml(mod_overall_H2)
+I2_H2 <- orchaRd::i2_ml(mod_overall_lnH)
 
 overall_plot_H2 <- orchard_plot(
-  object = mod_overall_H2,
+  object = mod_overall_lnH,
   group = "ma_id",
   xlab = "lnH",
   transfm = "none",
@@ -1029,7 +1150,7 @@ galaxy_data <- dat_quant %>%
     OR_ci_upper = exp(u_ci_logOR)
   ) %>%
   left_join(
-    dat_H2 %>% select(ma_e_id, I2, I2_ci_lower, I2_ci_upper, I2_se),
+    dat_lnH %>% select(ma_e_id, I2, I2_ci_lower, I2_ci_upper, I2_se),
     by = "ma_e_id"
   ) %>% 
   filter(!is.na(I2) & !is.na(OR))
@@ -1069,24 +1190,24 @@ pred_int <- data.frame(
 
 # Calculations for prediction intervals (lnH)
 # Extract model components
-mu_H2 <- as.numeric(mod_overall_H2$b)    # overall effect size (lnH)
-se_H2 <- mod_overall_H2$se               # standard error
-tau2_H2 <- sum(mod_overall_H2$sigma2)    # total between-study variance
-k_H2 <- length(mod_overall_H2$yi)        # number of effect sizes
-df_H2 <- k_H2 - length(mod_overall_H2$sigma2)  # conservative degrees of freedom
+mu_lnH <- as.numeric(mod_overall_lnH$b)    # overall effect size (lnH)
+se_lnH <- mod_overall_lnH$se               # standard error
+tau2_lnH <- sum(mod_overall_lnH$sigma2)    # total between-study variance
+k_lnH <- length(mod_overall_lnH$yi)        # number of effect sizes
+df_lnH <- k_lnH - length(mod_overall_lnH$sigma2)  # conservative degrees of freedom
 
 # Calculate t critical value
-t_crit_H2 <- qt(0.975, df = df_H2)
+t_crit_lnH <- qt(0.975, df = df_lnH)
 
 # Prediction interval on log scale
-pred_lower_H2 <- mu_H2 - t_crit_H2 * sqrt(tau2_H2 + se_H2^2)
-pred_upper_H2 <- mu_H2 + t_crit_H2 * sqrt(tau2_H2 + se_H2^2)
+pred_lower_H2 <- mu_lnH - t_crit_lnH * sqrt(tau2_lnH + se_lnH^2)
+pred_upper_H2 <- mu_lnH + t_crit_lnH * sqrt(tau2_lnH + se_lnH^2)
 
 # Convert to I-squared scale
 pred_int_I2 <- data.frame(
   I2_pred_lower = pmin(100, pmax(0, (exp(2 * pred_lower_H2[1]) - 1)/exp(2 * pred_lower_H2[1])  * 100)),
   I2_pred_upper = pmin(100, pmax(0, (exp(2 * pred_upper_H2[1]) - 1)/exp(2 * pred_upper_H2[1])  * 100)),
-  I2 = pmin(100, pmax(0, (exp(2 * mu_H2[1]) - 1)/exp(2 * mu_H2[1])  * 100))
+  I2 = pmin(100, pmax(0, (exp(2 * mu_lnH[1]) - 1)/exp(2 * mu_lnH[1])  * 100))
 )
 
 ```
@@ -1096,6 +1217,142 @@ pred_int_I2 <- data.frame(
 galaxy_data$col <- rep("col", nrow(galaxy_data))
 # Plot
 galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
+  # Individual points (no error bars)
+  geom_point(aes(fill = I2_se), 
+           shape = 21, 
+           color = "black", 
+           alpha = 0.8) +
+  
+  scale_fill_gradient(
+  low = "#76B5E0",
+  high = "#003F7F",
+  name = "I\u00b2 Imprecision (SE[I\u00b2]):",
+  guide = guide_colorbar(
+    barwidth = 10,
+    barheight = 0.5,
+    title.position = "top",
+    title.hjust = 0.5,
+    label.position = "bottom",
+    ticks = FALSE
+  )
+) +
+  
+  # Overall horizontal error bar (for OR)
+  geom_errorbarh(
+    data = overall_point,
+    aes(xmin = OR_ci_lower, xmax = OR_ci_upper),
+    height = 2, 
+    size = 1.3,
+    color = "red"
+  ) +
+  
+  # Prediction interval (OR)
+  # geom_errorbarh(
+  #   data = pred_int,
+  #   aes(xmin = OR_pred_lower, xmax = OR_pred_upper, y = overall_point$I2),
+  #   height = 1.5,
+  #   color = "black",
+  #   size = 0.5,
+  #   linetype = "solid"
+  # ) +
+  
+  # Prediction interval; (I-squared)
+  # geom_errorbar(
+  #   data = pred_int_I2,
+  #   aes(ymin = I2_pred_lower, ymax = I2_pred_upper, x = overall_point$OR),
+  #   color = "black",
+  #   width = 0.03, 
+  #   size = 0.5,
+  #   linetype = "solid"
+  # ) +
+  
+  # Overall vertical error bar (for I2)
+  geom_errorbar(
+    data = overall_point,
+    aes(ymin = I2_ci_lower, ymax = I2_ci_upper),
+    width = 0.03, 
+    size = 1.3,
+    color = "red"
+  ) +
+  
+  # Overall point (diamond)
+  geom_point(
+    data = overall_point,
+    aes(x = OR, y = I2),
+    shape = 23,  # Diamond shape
+    size = 2.5,
+    fill = "red",
+    color = "black",
+    stroke = 1
+  ) +
+  
+  scale_size(range = c(3, 12)) +
+  
+  annotate("text", x = 0, y = 85, label = "negative association\nlow consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 1.55, y = 85, label = "positive association\nlow consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 1.55, y = 15, label = "positive association\nhigh consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 0, y = 15, label = "negative association\nhigh consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 0.1, y = 60, label = "n = 23\nk = 240", hjust = 0, size = 4.5) +
+
+  # Reference lines
+  geom_vline(xintercept = 1, linetype = "dashed" , color = "red") +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = 1.5, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
+
+  # Axes
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.5)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
+  scale_color_manual(values = c("data" = "black"),
+                     guide = guide_legend(override.aes = list(fill = NA))) +
+  #scale_fill_manual(values = "#4A90E2") +
+  guides(
+  size = guide_legend(order = 1, 
+                      override.aes = list(shape = 21),
+                      title.position = "top",
+                      title.hjust = 0.5,
+                      label.position = "bottom"),
+  fill = guide_colorbar(order = 2, 
+                        barwidth = 10, 
+                        barheight = 0.7,
+                        title.position = "top",
+                        title.hjust = 0.5,
+                        label.position = "bottom",
+                        ticks = FALSE),
+  color = "none"
+) +
+
+  # Labels
+  labs(
+    x = "Odds Ratio (OR)",
+    y = "Heterogeneity (I\u00b2 %)",
+    size = "OR Precision (1/SE[OR]):"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 12),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12))
+
+ggMarginal(galaxy_plot ,
+           type = "histogram",
+           fill = "#FFC000",
+           color = "black")
+```
+
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs","fig_overall.png"),
+       width = 9, height = 7, bg = "white", dpi = 300)
+```
+
+
+```{r, eval=FALSE}
+galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/I2_se)) +
   # Individual points (no error bars)
   geom_point(aes(color = "data"), 
              shape = 21, 
@@ -1151,10 +1408,11 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
   
   scale_size(range = c(3, 12)) +
   
-  annotate("text", x = 0, y = 85, label = "lack of association\nlow consistency", hjust = 0, size = 4.5) +
-  annotate("text", x = 1.55, y = 85, label = "positive association\nlow consistency", hjust = 0, size = 4.5) +
-  annotate("text", x = 1.55, y = 15, label = "positive association\nhigh consistency", hjust = 0, size = 4.5) +
-  annotate("text", x = 0, y = 15, label = "lack of association\nhigh consistency", hjust = 0, size = 4.5) +
+  annotate("text", x = 0, y = 85, label = "negative association\nlow consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 1.55, y = 85, label = "positive association\nlow consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 1.55, y = 15, label = "positive association\nhigh consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 0, y = 15, label = "negative association\nhigh consistency", hjust = 0, size = 4.2) +
+  annotate("text", x = 0.1, y = 60, label = "n = 24\nk = 240", hjust = 0, size = 4.5) +
 
   # Reference lines
   geom_vline(xintercept = 1, linetype = "dashed" , color = "firebrick") +
@@ -1176,7 +1434,7 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
   labs(
     x = "Odds Ratio",
     y = "Heterogeneity (I\u00b2 %)",
-    size = "Precision (1/SE):"
+    size = "Precision (1/SE I\u00b2):"
   ) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "bottom",
@@ -1193,10 +1451,7 @@ ggMarginal(galaxy_plot ,
            color = "black")
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs","fig_overall.png"),
-       width = 9, height = 7, bg = "white", dpi = 300)
-```
+
 
 **Figure 1. Overall association and consistency of PFAS-related adverse health outcomes across meta-analyses.**
 *Each bubble represents a meta-analytic effect size (n = 207) from 23 published meta-analyses on PFAS exposure and human health outcomes. The x-axis shows the pooled Odds Ratio (OR), where values above 1 indicate increased odds of adverse outcomes. The y-axis depicts heterogeneity (I²), representing the percentage of variation across studies not due to chance. Bubble sizes are scaled by precision (inverse of standard error). The red diamond indicates the overall pooled estimate from a meta-meta-analysis, with horizontal and vertical error bars showing its 95% confidence intervals for OR and I², respectively. Grey dashed and solid lines indicate thresholds for heterogeneity (25% = low, 50% = medium, 75% = high). Quadrant annotations help interpret the strength and consistency of associations.*
@@ -1307,7 +1562,7 @@ forest_plot_chemical
 ```{r, results=FALSE, warning=FALSE}
 # Run separate meta-analyses for each chemical_id
 results_list2 <- map_dfr(chemicals, function(chem) {
-  dat_sub <- dat_H2 %>% filter(chemical_id == chem)
+  dat_sub <- dat_lnH %>% filter(chemical_id == chem)
   
   if (n_distinct(dat_sub$ma_e_id) > 1) {  # Require at least 2 meta-analytic estimates
     tryCatch({
@@ -1357,7 +1612,7 @@ results_list2 <- map_dfr(chemicals, function(chem) {
 ```
 
 ```{r, include=FALSE}
-custom_order <- c("PFDoDA", "PFUnDA", "PFHpA", "PFDA", "PFAS", "PFNA", "PFOS", "PFHxS", "PFOA")
+custom_order <- c("PFDoDA", "PFUnDA", "PFHpA", "PFDA", "PFAS", "PFNA", "PFOS", "PFHxS", "PFOA", "PFBS")
 
 plot_data_chemical_H2 <- results_list2 %>% 
   filter(!is.na(lnH)) %>% 
@@ -1401,33 +1656,30 @@ forest_plot_chemical
 ```{r, echo=FALSE}
 plot_data_chemical_merged$significant <- plot_data_chemical_merged$pval < 0.05
 
-galaxy_chemicals <- ggplot(plot_data_chemical_merged, aes(x = OR, y = I2, label = chemical_id, size = k, color = significant, alpha = significant)) +
-  geom_point() +
+galaxy_chemicals <- ggplot(plot_data_chemical_merged, 
+                           aes(x = OR, y = I2, label = chemical_id, size = k, fill = significant)) +
+  geom_point(aes(alpha = significant), shape = 21, color = "black") +
   geom_text_repel(size = 6, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
   
-  # Quadrant text
-  # annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 4) +
-  # annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 4) +
-  # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
-  # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
-
-  scale_color_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
-  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 1)) +
+  scale_fill_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 0.6)) +
   scale_size(range = c(8, 13)) +
-  scale_x_continuous(limits = c(0.85, 1.15), breaks = seq(0.85, 1.15, by = 0.15)) +
+  scale_x_continuous(limits = c(0.6, 1.4), breaks = seq(0.6, 1.4, by = 0.2)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
   labs(
     x = "Effect size (OR)",
     y = "Heterogeneity (I\u00b2 %)",
-    color = "OR p < 0.05:",
+    fill = "OR p < 0.05:",
     size = "k:"
   ) +
   theme_minimal(base_size = 13) +
+  ggtitle("A") +
   theme(
+    plot.title = element_text(size = 18),
     legend.position = "none",
     legend.box = "vertical",
     legend.margin = margin(),
@@ -1438,17 +1690,27 @@ galaxy_chemicals <- ggplot(plot_data_chemical_merged, aes(x = OR, y = I2, label 
     axis.text.y = element_text(size = 12)
   ) +
   guides(
-    color = "none",
-    size = guide_legend(
-    override.aes = list(
-      shape = 21,         
-      fill = NA,     
-      color = "grey50",    
-      alpha = 1           
+    fill = guide_legend(
+      override.aes = list(
+        shape = 21,
+        color = "black",
+        alpha = 1
+      ),
+      order = 1
     ),
-    order = 2
+    alpha = "none",
+    size = guide_legend(
+      override.aes = list(
+        shape = 21,
+        fill = NA,
+        color = "grey50",
+        alpha = 1
+      ),
+      order = 2
+    )
   )
-  )
+
+galaxy_chemicals
 ```
 
 ```{r, include=FALSE, eval=FALSE}
@@ -1577,7 +1839,7 @@ forest_plot_health
 
 
 ```{r, results=FALSE, warning=FALSE}
-dat_H2 <- dat_H2 %>% 
+dat_lnH <- dat_lnH %>% 
 mutate(health_outcome_group = recode(
     health_outcome_group,
     "Endocrine, nutritional or metabolic diseases" = "Endocrine diseases",
@@ -1592,11 +1854,11 @@ mutate(health_outcome_group = recode(
   ))
 
 # Get a list of outcome groups
-outcomes <- unique(dat_H2$health_outcome_group)
+outcomes <- unique(dat_lnH$health_outcome_group)
 
 # Loop over each health outcome group
 results_health_H2 <- map_dfr(outcomes, function(outcome) {
-  dat_sub <- dat_H2 %>% filter(health_outcome_group == outcome)
+  dat_sub <- dat_lnH %>% filter(health_outcome_group == outcome)
   
   if (n_distinct(dat_sub$ma_e_id) > 1) { # requires at least 2 meta-analytic estimates
     tryCatch({
@@ -1690,33 +1952,30 @@ forest_plot_health2
 ```{r, echo=FALSE}
 plot_data_health_merged$significant <- plot_data_health_merged$pval < 0.05
 
-galaxy_health <- ggplot(plot_data_health_merged, aes(x = OR, y = I2, label = health_outcome_group, size = k, color = significant, alpha = significant)) +
-  geom_point() +
+galaxy_health <- ggplot(plot_data_health_merged, 
+                        aes(x = OR, y = I2, label = health_outcome_group, size = k, fill = significant)) +
+  geom_point(aes(alpha = significant), shape = 21, color = "black") +
   geom_text_repel(size = 6, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
   
-  # Quadrant text
-  # annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 4) +
-  # annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 4) +
-  # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 4) +
-  # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 4) +
-
-  scale_color_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
-  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 1)) +
+  scale_fill_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 0.6)) +
   scale_size(range = c(8, 13)) +
-  scale_x_continuous(limits = c(0.85, 1.15), breaks = seq(0.85, 1.15, by = 0.15)) +
+  scale_x_continuous(limits = c(0.6, 1.4), breaks = seq(0.6, 1.4, by = 0.2)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
   labs(
-    x = "Odds Ratio",
+    x = "Odds Ratio (OR)",
     y = "Heterogeneity (I\u00b2 %)",
-    color = "OR p < 0.05:",
+    fill = "p-value OR < 0.05:",
     size = "k:"
   ) +
   theme_minimal(base_size = 13) +
+  ggtitle("B") +
   theme(
+    plot.title = element_text(size = 18),
     legend.position = "bottom",
     legend.box = "vertical",
     legend.margin = margin(),
@@ -1727,26 +1986,36 @@ galaxy_health <- ggplot(plot_data_health_merged, aes(x = OR, y = I2, label = hea
     axis.text = element_text(size = 12)
   ) +
   guides(
-    color = "none",
-    size = guide_legend(
-    override.aes = list(
-      shape = 21,         
-      fill = NA,     
-      color = "grey50",    
-      alpha = 1           
+    fill = guide_legend(
+      override.aes = list(
+        shape = 21,
+        color = "black",
+        alpha = 1,
+        size = 7
+      ),
+      order = 1
     ),
-    order = 2
+    alpha = "none",
+    size = guide_legend(
+      override.aes = list(
+        shape = 21,
+        fill = NA,
+        color = "grey50",
+        alpha = 1
+      ),
+      order = 2
+    )
   )
-  )
+galaxy_health
 ```
 
 ```{r, echo=FALSE}
 combined_plot <- plot_grid(galaxy_chemicals, galaxy_health, 
-                           labels = c('A','B'),
-                           label_size = 14,
+                           #labels = c('A','B'),
+                           #label_size = 18,
                            nrow = 2,
                            #align = "v",
-                           rel_heights = c(1, 1.4))
+                           rel_heights = c(1, 1.5))
 
 # Add a single y-axis label
 ggdraw() + 
@@ -1763,7 +2032,7 @@ ggdraw() +
 
 ```{r, include=FALSE, eval=FALSE}
 ggsave(here("figs","fig3.png"),
-       width = 9, height = 10, bg = "white", dpi = 300)
+       width = 9, height = 9, bg = "white", dpi = 300)
 ```
 
 ## Summary Results
@@ -1831,7 +2100,7 @@ ggplot(est_dat, aes(x = chemical_id, y = estimate, ymin = ci.lb, ymax = ci.ub)) 
 source(here("function", "custom_lnH.R"))
 
 # get estimate for each cell
-est_dat_lnH <- dat_H2 %>% group_by(chemical_id, health_outcome_group) %>%
+est_dat_lnH <- dat_lnH %>% group_by(chemical_id, health_outcome_group) %>%
   mutate(health_outcome_group = recode(
     health_outcome_group,
     "Endocrine, nutritional or metabolic diseases" = "Endocrine diseases",
@@ -1963,7 +2232,6 @@ ggsave(here("figs","fig4.png"),
    estimate = 0.172, CI = [0.038, 0.305], p-val = 0.0333, n = 3, k = 5.
 -  PFUnDA - Diseases related to pregnancy or childbirth:
    estimate = -0.136, CI = [-0.229, -0.043], p-val = 0.0263, n = 3, k = 4.
-
 
 # Sensitivity Analysis
 
