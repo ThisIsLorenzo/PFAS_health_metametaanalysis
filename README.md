@@ -9,6 +9,7 @@ You can find the Preprint at the following link:
 ### Analysis scripts (`/R`)
 Contains R markdown files (`.Rmd`) with corresponding HTML outputs documenting the analysis.
 -  `/R/analysis_code_mma.Rmd`: General analysis code.
+-  -  `/R/analysis_code_mma.html`: HTML file (visualisation) of general analysis code.
 ### Data files (`/data`)
 Houses all datasets in CSV format used in the analysis.
 -  `/data/ma_details.csv`: Study Identification Information
