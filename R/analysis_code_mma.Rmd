@@ -22,23 +22,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Link to the pre-registered Research Protocol: https://osf.io/dc5mx
 
-**Review questions:**
+**Review objectives:**
 
-1.	How does exposure to per- and polyfluoroalkyl substances (PFAS) affect human health?
-2.	Which PFAS are linked to adverse health effects, and what are the associated health outcomes?
-3.	What are the significant associations between individual PFAS and specific health outcomes, and how strong are these correlations?
-4.	How consistent are the findings regarding PFAS-health outcome associations across different meta-analyses?
-
-**Objectives:**
-
-1.	To evaluate the magnitude and variability of associations between PFAS exposure and human health outcomes based on multiple meta-analyses.
-2.	To identify specific PFAS (e.g., perfluorooctane sulfonate (PFOS)) significantly associated with adverse health effects and the specific health outcomes impacted.
-3.	To determine significant PFAS-health outcome correlations and assess the strength of these relationships.
-4.	To assess the consistency of findings from objectives 2 and 3 by analyzing the heterogeneity across meta-analyses.
+1.	Quantify the magnitude and variability of these associations
+2.	Identify PFAS most strongly linked to specific health outcomes
+3.	Assess the strength of PFAS–health outcome relationships
+4.	Evaluate the overall consistency of findings across the evidence base
 
 **Research approach:**
 
-In this meta-meta-analysis, we model meta-analytic estimates from existing meta-analyses. We also model heterogeneity metrics reported by those meta-analyses.
+In this meta-meta-analysis, we model meta-analytic estimates from existing meta-analyses. We also model heterogeneity metrics (I-squared) reported by those meta-analyses.
 In this analysis workflow, we answer to research question 4 within research questions 1, 2, and 3. In other words, every time we assess the magnitude of results we also assess the consistency of results.
 
 # Packages
@@ -64,7 +57,8 @@ pacman::p_load(tidyr,
                ggMarginal,
                flextable,
                officer,
-               ggExtra
+               ggExtra,
+               forcats
                )       
 ```
 
@@ -74,6 +68,22 @@ pacman::p_load(tidyr,
 # Load the 'ma_details' and 'ma_e_details' datasets from the 'data' folder using the 'here' package
 ma_details <- read.csv(here("data/ma_details.csv"))
 ma_e_details <- read.csv(here("data/ma_e_details.csv"))
+amstar2 <- read.csv(here("data/amstar2.csv"))
+
+amstar2 <- amstar2 %>%
+  # Remove all columns ending with "Comment"
+  select(-ends_with("Comment")) %>%
+  # Rename by extracting question numbers
+  rename_with(
+    ~ case_when(
+      . == "ma_id" ~ "ma_id",
+      . == "ma_doi" ~ "ma_doi",
+      str_detect(., "^Q(\\d+)\\.") ~ paste0("Q", str_extract(., "(?<=^Q)\\d+")),
+      TRUE ~ .
+    ),
+    .cols = everything()
+  ) %>% 
+  mutate(across(starts_with("Q"), ~ as.numeric(str_extract(., "^\\d+\\.?\\d*"))))
 
 # Creating a data set for qualitative synthesis (i.e., dat_qual)
 # Filter and clean 'ma_e_details', then join with 'ma_details'
@@ -106,14 +116,15 @@ dat_qual <- ma_e_details %>%
   # Removing excluded studies
   filter(status != "excluded") %>% 
   mutate(ma_journal = tolower(ma_journal),
-         ma_journal = gsub("^\\s+|\\s+$", "", ma_journal))
+         ma_journal = gsub("^\\s+|\\s+$", "", ma_journal)) %>% 
+  left_join(amstar2, by = "ma_id", suffix = c("", ".remove"))
 ```
 
 # Effect size conversion
 
-To address the challenge of different effect size metrics reported across the included meta-analyses, I developed a conversion function (*convert_to_logOR()*) to standardize all effect sizes to the log odds ratio (logOR) scale. 
+To address the challenge of different effect size metrics reported across the included meta-analyses, we developed a conversion function (*convert_to_logOR()*) to standardize all effect sizes to the log odds ratio (lnOR) scale. 
 
-This function systematically converted odds ratios, standardized mean differences, risk ratios (with or without baseline risk adjustment), Fisher’s z values, and logistic regression coefficients to logOR values, based on established methodological approximations (e.g., Borenstein et al., 2021).
+This function systematically converted odds ratios, standardized mean differences, risk ratios (with or without baseline risk adjustment), Fisher’s z values, and logistic regression coefficients to lnOR values, based on established methodological approximations (e.g., Borenstein et al. 2021).
 
 ```{r, results=FALSE}
 # Define a conversion function with an optional baseline risk parameter
@@ -211,9 +222,8 @@ dat_quant <- dat_qual %>%
   filter(!is.na(logOR))
 ```
 
-# Removing duplicated meta-analytic estimates
 
-```{r}
+```{r, include=FALSE}
 dat_quant <- dat_quant %>%
   group_by(chemical_id, health_outcome_group) %>%
   mutate(
@@ -224,11 +234,9 @@ dat_quant <- dat_quant %>%
   ungroup()
 ```
 
-Seven meta-analytic estimates were removed because they were duplicates (exact same point estimate, confidence intervals, chemical identity, and health outcome group). Duplicates in meta-analytic estimates occur when two or more meta-analytic estimates are based on exactly the same set of primary studies.
-
 # Testing the impact of our conversion strategy
 
-I assessed whether the original effect size metric (ma_es_measure in the following model) influenced the meta-meta-analysis results by including it as a moderator in a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID). 
+We assessed whether the original effect size metric (ma_es_measure in the following model) influenced the meta-meta-analysis results by including it as a moderator in a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID). 
 
 ```{r, include=FALSE, warning=FALSE}
 dat_quant$ma_es_measure <- as.factor(dat_quant$ma_es_measure)
@@ -259,9 +267,14 @@ mod_test <- rma.mv(yi = logOR,
               data = dat_quant)
 ```
 
-```{r, include=FALSE, warning=FALSE}
+```{r, echo=FALSE, warning=FALSE}
 # Display model results
 summary(mod_test)
+```
+
+
+```{r, eval=FALSE}
+save(mod_test, file = here("Rdata", "mod_test.RData"))
 ```
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -279,16 +292,20 @@ orchard_plot(
     axis.text.x = element_text(size = 10)
   )
 ```
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","Figure S01.png"),
+       width = 6,
+       height = 6)
+```
 
 The moderator analysis revealed a statistically significant impact of the effect size metric on the overall estimates (p = 0.0003). 
 
-To reduce potential bias and improve consistency, I subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 206, number of meta-analyses: 23).
+To reduce potential bias and improve consistency, we subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 206, number of meta-analyses: 23).
 
 ```{r, include=FALSE}
 dat_quant <- dat_quant %>% 
   filter(ma_es_measure %in% c("Odds ratio", "log Odds ratio"))
 ```
-
 
 # Overview of the Dataset
 
@@ -440,7 +457,21 @@ est_dat <- dat_quant %>% group_by(chemical_id, health_outcome_group) %>%
 # traditional map with the number of study
 est_dat$chemical_id <- as.factor(est_dat$chemical_id)
 
-Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_studies) ) +
+est_dat <- est_dat %>%
+  mutate(health_outcome_group_short = recode(health_outcome_group,
+    "Diseases of the\nrespiratory system"   = "Respiratory",
+    "Diseases of the skin"                  = "Skin",
+    "Neoplasms"                             = "Neoplasms",
+    "Symptoms not\nelsewhere classified"    = "Symptoms (NEC)",
+    "Pregnancy or\nchildbirth"              = "Pregnancy/Childbirth",
+    "Diseases of the\ncirculatory system"   = "Circulatory system",
+    "Endocrine diseases"                    = "Endocrine",
+    "Neurodevelopmental\ndisorders"         = "Neurodevelopment",
+    "Perinatal period"                      = "Perinatal",
+    "Diseases of the\nmusculoskeletal system" = "Musculoskeletal"
+  ))
+
+Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group_short, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Group") +
   scale_size(range = c(8,22)) +
@@ -454,7 +485,7 @@ Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size
         axis.text = element_text(color = "black"),
         axis.title = element_text(color = "black")) +
   geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of studies") + 
+  #labs(caption = "The value in the cell is the number of studies") + 
    theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
          axis.text.x = element_text(angle = 45, hjust = 1),
          axis.text = element_text(size = 11),
@@ -464,9 +495,15 @@ Box1_map1
 
 ```
 
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","Figure S02.png"),
+       width = 8,
+       height = 8)
+```
+
 ```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
 # traditional map with the number of effect size
-Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size = n_es)) +
+Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group_short, size = n_es)) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[3]) + 
   labs(x = "PFAS", y = "Health Outcome Group") +
   scale_size(range=c(8,22)) +
@@ -480,7 +517,7 @@ Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size
         axis.text = element_text(color = "black"),
         axis.title = element_text(color = "black")) +
   geom_text(aes(label = as.character(n_es)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of effect sizes") +
+  #labs(caption = "The value in the cell is the number of effect sizes") +
    theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
          axis.text.x = element_text(angle = 45, hjust = 1),
          axis.text = element_text(size = 12),
@@ -489,6 +526,11 @@ Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group, size
 Box1_map2
 ```
 
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","Figure S03.png"),
+       width = 8,
+       height = 8)
+```
 -  A = Diseases related to pregnancy or childbirth
 -  B = Neoplasms
 -  C = Neurodevelopmental disorders
@@ -502,10 +544,21 @@ est_dat2 <- dat_quant %>%
 
 est_dat2 <- est_dat2 %>% group_by(chemical_id, health_outcome_type) %>%
   group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
+
+est_dat2 <- est_dat2 %>%
+  mutate(health_outcome_type_short = recode(health_outcome_type,
+    "gestational diabetes mellitus"         = "GDM",
+    "gestational hypertension"              = "gestational hypertension",
+    "hypertensive disorders of pregnancy (HDP)"    = "HDP",
+    "preeclampsia"                          = "preeclampsia",
+    "fecundability"                         = "fecundability",
+    "infertility"                           = "infertility",
+    "miscarriage"                           = "miscarriage"
+  ))
 ```
 
 ```{r,include=FALSE}
-Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type_short, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
   scale_size(range=c(8,15)) +
@@ -527,16 +580,34 @@ Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type, size
 Box2_map1
 ```
 
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","figXX3.png"),
+       width = 8,
+       height = 6)
+```
+
 ```{r, include=FALSE}
 est_dat3 <- dat_quant %>% 
   filter(health_outcome_group == "Neoplasms")
 
 est_dat3 <- est_dat3 %>% group_by(chemical_id, health_outcome_type) %>%
   group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
+
+est_dat3 <- est_dat3 %>%
+  mutate(health_outcome_type_short = recode(health_outcome_type,
+    "breast cancer"         = "breast cancer",
+    "gastointestinal tract cancer (GIC)"              = "GIC",
+    "genitourinary cancer"    = "genitourinary cancer",
+    "hematologic cancer"                          = "hematologic cancer",
+    "lung cancer"                         = "lung cancer",
+    "risk of total cancer"                           = "total cancer",
+    "skin cancer"                           = "skin cancer",
+    "thyroid cancer"                           = "thyroid cancer"
+  ))
 ```
 
 ```{r,include=FALSE}
-Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
+Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type_short, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
   scale_size(range=c(8,15)) +
@@ -556,6 +627,12 @@ Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type, size
          axis.title.y = element_blank()) 
 
 Box2_map2
+```
+
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","figXX4.png"),
+       width = 8,
+       height = 6)
 ```
 
 ```{r, include=FALSE}
@@ -587,6 +664,12 @@ Box2_map3 <- ggplot(est_dat4, aes(x = chemical_id, y = health_outcome_type, size
          axis.title.y = element_text(size = 12, face = "bold")) 
 
 Box2_map3
+```
+
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","figXX5.png"),
+       width = 8,
+       height = 6)
 ```
 
 ```{r, include=FALSE}
@@ -673,7 +756,7 @@ Box2_map6 <- ggplot(est_dat7, aes(x = chemical_id, y = health_outcome_type, size
         axis.text = element_text(color = "black"),
         axis.title = element_text(color = "black")) +
   geom_text(aes(label = as.character(n_studies)), size = 4, color = "gray10") +
-  labs(caption = "The value in the cell is the number of studies") + 
+  #labs(caption = "The value in the cell is the number of studies") + 
    theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
          axis.text.x = element_text(angle = 45, hjust = 1),
          axis.text = element_text(size = 11),
@@ -685,11 +768,17 @@ Box2_map6
 
 
 ```{r, echo=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
-plot_grid(Box2_map1, Box2_map2, Box2_map3, Box2_map4, Box2_map5, Box2_map6, 
+plot_grid(Box2_map1, Box2_map6, Box2_map2, Box2_map3, Box2_map4, Box2_map5, 
           labels = c('A','B','C','D','E','F'),
           label_size = 14,
           nrow = 3,
           ncol = 2)
+```
+
+```{r, include=FALSE, eval=FALSE}
+ggsave(here("figs/suppl","Figure S04.png"),
+       width = 10,
+       height = 14)
 ```
 
 # First Research Question
@@ -727,6 +816,11 @@ I2_logOR <- orchaRd::i2_ml(mod_overall)
 ```{r, echo=FALSE}
 #mod_overall <- robust(mod_overall, dat_quant$pair) #The robust() function computes robust standard errors that account for non-normality and/or heteroscedasticity in the residuals.
 summary(mod_overall)
+```
+
+
+```{r, eval=FALSE}
+save(mod_test, file = here("Rdata", "mod_test.RData"))
 ```
 
 ```{r, include=FALSE}
@@ -849,7 +943,6 @@ rma.mv(
 )
 ```
 
-FROM YEFENG:
 
 ```{r, eval=FALSE, warning=FALSE}
 dat <- dat_lnH[!is.na(dat_lnH$lnH),]
@@ -1006,7 +1099,7 @@ I2_text <- paste0("I² = ", round(overall_results_H2$I2, 1),
                   "–", round(overall_results_H2$I2_ci_upper, 1), "%]")
 ```
 
-```{r}
+```{r, include=FALSE}
 overall_plot <- orchard_plot(
   object = mod_overall,
   group = "ma_id",
@@ -1029,8 +1122,7 @@ overall_plot
 ```
 
 
-OLD:
-```{r, eval=FALSE}
+```{r, include=FALSE}
 overall_plot <- orchard_plot(
   object = mod_overall,
   group = "ma_id",
@@ -1342,7 +1434,8 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
 ggMarginal(galaxy_plot ,
            type = "histogram",
            fill = "#FFC000",
-           color = "black")
+           color = "black",
+           alpha = 0.8)
 ```
 
 ```{r, include=FALSE, eval=FALSE}
@@ -1454,22 +1547,28 @@ ggMarginal(galaxy_plot ,
 
 
 **Figure 1. Overall association and consistency of PFAS-related adverse health outcomes across meta-analyses.**
-*Each bubble represents a meta-analytic effect size (n = 207) from 23 published meta-analyses on PFAS exposure and human health outcomes. The x-axis shows the pooled Odds Ratio (OR), where values above 1 indicate increased odds of adverse outcomes. The y-axis depicts heterogeneity (I²), representing the percentage of variation across studies not due to chance. Bubble sizes are scaled by precision (inverse of standard error). The red diamond indicates the overall pooled estimate from a meta-meta-analysis, with horizontal and vertical error bars showing its 95% confidence intervals for OR and I², respectively. Grey dashed and solid lines indicate thresholds for heterogeneity (25% = low, 50% = medium, 75% = high). Quadrant annotations help interpret the strength and consistency of associations.*
+*Each blue circle represents the combination of a meta-analytic effect size and associated heterogeneity measure from 23 published meta-analyses on PFAS exposure and human health outcomes. The x-axis shows the pooled odds ratio (OR), where values above 1 indicate increased odds of adverse outcomes. The y-axis depicts heterogeneity (I²), representing the percentage of variation across studies not due to chance. Bubble sizes are scaled by OR’s precision (inverse of standard error), and the colour gradient is according to I²’s imprecision (standard error). The black diamond filled in red indicates the overall pooled estimate from a meta-meta-analysis, with red horizontal and vertical error bars showing its 95% confidence intervals for OR and I², respectively. Grey dashed lines indicate thresholds for heterogeneity and OR. Quadrant annotations help interpret the strength and consistency of associations. The yellow histogram at the top and the yellow histogram on the right represent data distributions of odds ratios and heterogeneity measures, respectively. An explanation for the large number of I2 values at zero is provided in the discussion section.*
 
-## Summary Results RQ1
 
-**1)**  Across all meta-analyses included in our synthesis, exposure to PFAS was associated with a statistically significant increase in the odds of experiencing adverse health outcomes. On average, PFAS exposure was linked to a 5.8% increase in risk (95% CI: 3.1%–8.6%), suggesting a modest but measurable impact on human health. We observed substantial overall heterogeneity (I² logOR= 86.9%), with the majority (71.7%) attributable to differences among effect sizes within individual meta-analyses. This suggests that variation in reported associations is driven more by heterogeneity in primary study findings than by systematic differences across meta-analyses.
-
-**2)**  The average reported heterogeneity across PFAS-related meta-analyses was moderate (average lnH = 0.53 = I² ≈ 42%), but the amount of heterogeneity in these heterogeneity estimates themselves was substantial (I² lnH ≈ 89%). Approximately half of this variance (49%) was attributable to differences between meta-analyses, suggesting that some research syntheses consistently report more heterogeneity than others
-
+```{r, include=FALSE}
+summary_table <- dat_quant %>%
+  mutate(n_ps_e = if_else(is.na(n_ps_e), n_ps, n_ps_e)) %>%
+  group_by(ma_id) %>%
+  summarise(
+    aut_year = paste(unique(ma_aut_year)),
+    info_population = paste(unique(info_population), collapse = ", "),
+    chemical_id = paste(unique(chemical_id), collapse = ", "),
+    health_outcome_type = paste(unique(health_outcome_type), collapse = ", "),
+    n_ps_e = sum(n_ps_e, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
 
 # Second Research Question
 
 ## Chemicals
 
-**Question:** What individual PFAS are significantly associated with adverse health outcomes?
-
-To evaluate chemical-specific associations, I conducted separate multilevel meta-analyses for each chemical. First, I identified all unique chemicals in the dataset and then, for each chemical, filtered the data accordingly. I run the model when at least two meta-analytic estimates contributed data for a given chemical. Using a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID), I estimated the pooled log odds ratio (logOR), its confidence interval, and p-value. Results were stored in a unified table. If a model failed to converge or insufficient data were available, missing values (NA) were recorded instead. This approach allowed a standardized and robust summary of the strength and variability of associations for each individual chemical.
+To evaluate chemical-specific associations, we conducted separate multilevel meta-analyses for each chemical. First, we identified all unique chemicals in the dataset and then, for each chemical, filtered the data accordingly. We run the model when at least two meta-analytic estimates contributed data for a given chemical. Using a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID), I estimated the pooled log odds ratio (logOR), its confidence interval, and p-value. Results were stored in a unified table. If a model failed to converge or insufficient data were available, missing values (NA) were recorded instead. This approach allowed a standardized and robust summary of the strength and variability of associations for each individual chemical.
 
 ```{r, results=FALSE, warning=FALSE}
 # Get a list of chemicals
@@ -1507,6 +1606,8 @@ results_list <- map_dfr(chemicals, function(chem) {
         ci.lb = model$ci.lb,
         ci.ub = model$ci.ub,
         pval = model$pval,
+        tval = model$zval,
+        df = model$ddf,
         # tau2 = tau2_raw,
         # I2 = I2_raw,
         # CV = CV_raw,
@@ -1514,12 +1615,12 @@ results_list <- map_dfr(chemicals, function(chem) {
         n = n_distinct(dat_sub$ma_id)
       )
     }, error = function(e) {
-      tibble(chemical_id = chem, logOR = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+      tibble(chemical_id = chem, logOR = NA, ci.lb = NA, ci.ub = NA, pval = NA, tval = NA, df = NA,
              #tau2 = NA, I2 = NA, CV = NA,
              k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
     })
   } else {
-     tibble(chemical_id = chem, logOR = NA, ci.lb = NA, ci.ub = NA, pval = NA,
+     tibble(chemical_id = chem, logOR = NA, ci.lb = NA, ci.ub = NA, pval = NA, tval = NA, df = NA,
            #tau2 = NA, I2 = NA, CV = NA,
            k = nrow(dat_sub), n = n_distinct(dat_sub$ma_id))
   }
@@ -1665,7 +1766,7 @@ galaxy_chemicals <- ggplot(plot_data_chemical_merged,
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
   
-  scale_fill_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_fill_manual(values = c("#0072B2", "#E69F00"), labels = c("No", "Yes")) +
   scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 0.6)) +
   scale_size(range = c(8, 13)) +
   scale_x_continuous(limits = c(0.6, 1.4), breaks = seq(0.6, 1.4, by = 0.2)) +
@@ -1783,6 +1884,8 @@ results_health <- map_dfr(outcomes, function(outcome) {
         ci.lb = model$ci.lb,
         ci.ub = model$ci.ub,
         pval = model$pval,
+        tval = model$zval,
+        df = model$ddf,
         # tau2 = tau2_raw,
         # I2 = I2_raw,
         # CV = CV_raw,
@@ -1961,7 +2064,7 @@ galaxy_health <- ggplot(plot_data_health_merged,
   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
   
-  scale_fill_manual(values = c("grey50", "#4A90E2"), labels = c("No", "Yes")) +
+  scale_fill_manual(values = c("#0072B2", "#E69F00"), labels = c("No", "Yes")) +
   scale_alpha_manual(values = c("FALSE" = 0.6, "TRUE" = 0.6)) +
   scale_size(range = c(8, 13)) +
   scale_x_continuous(limits = c(0.6, 1.4), breaks = seq(0.6, 1.4, by = 0.2)) +
@@ -2009,7 +2112,7 @@ galaxy_health <- ggplot(plot_data_health_merged,
 galaxy_health
 ```
 
-```{r, echo=FALSE}
+```{r, include=FALSE}
 combined_plot <- plot_grid(galaxy_chemicals, galaxy_health, 
                            #labels = c('A','B'),
                            #label_size = 18,
@@ -2035,39 +2138,8 @@ ggsave(here("figs","fig3.png"),
        width = 9, height = 9, bg = "white", dpi = 300)
 ```
 
-## Summary Results
-
-**1)**  
-
--  **PFOS** and **PFOA** both show statistically significant positive associations (logOR = 0.061 and 0.073, respectively), meaning exposure is associated with increased odds of adverse outcomes. However, both also have moderate-to-high I² values (around 63–69%), suggesting that although the associations are consistent enough to reach statistical significance, there is notable heterogeneity in the size of the effect across meta-analyses.
-
--  **PFHxS** and **PFNA** have positive but non-significant logORs and similarly high I² values (~62%), implying inconsistent evidence. The direction is generally toward harm, but effect sizes vary too much across studies to confirm a reliable association.
-
--  **PFUnDA** and **PFDA** have very low I² values (~14%) and small, non-significant logORs, suggesting high consistency, but no compelling evidence of a harmful effect. This could imply a genuine lack of association or uniformly small effects across studies.
-
--  **PFDoDA** and **PFHpA** show near-zero or slightly negative logORs and moderate I² values (~35–46%), indicating modest inconsistency, but again no meaningful association with health outcomes.
-
--  The **PFAS** (unspecified mix) group shows a near-zero, non-significant logOR and very high heterogeneity (I² = 69.8%), implying that the mixed results likely reflect true variability across the included studies rather than random error.
-
-**2)**  
-
--  **Diseases of the circulatory system**: Strongest and most consistent association: PFAS exposure is associated with a statistically significant increase in odds (logOR = 0.084). While heterogeneity is moderate-to-high (I² = 67.2%), the tight confidence interval and high precision suggest a fairly robust relationship despite study-level differences.
-
--  **Pregnancy, childbirth or the puerperium**: A significant but smaller effect (logOR = 0.049) with low heterogeneity (I² = 19.4%). This implies a consistent and reliable association, suggesting that even small effects are replicable across studies.
-
--  **Perinatal period**: A positive but non-significant effect (logOR = 0.041) with low-to-moderate heterogeneity (I² = 32.1%). Results are fairly consistent, but the effect may be small or diluted by study design variation.
-
--  **Endocrine diseases**: A relatively large but non-significant effect (logOR = 0.101) paired with moderate heterogeneity (I² = 54.4%). This combination implies uncertainty and variation across studies — some may show strong effects, others null or opposite. More research is likely needed.
-
--  **Neoplasms**: Shows low, non-significant effect (logOR = 0.028) but very high heterogeneity (I² = 92.2%). This suggests results are highly inconsistent, and the small average effect likely masks large between-study variation, possibly due to differences in cancer types, latency periods, or exposure metrics.
-
--  **Neurodevelopmental disorders**: No evidence of association (logOR ~ 0) with moderate heterogeneity (I² = 50.5%), suggesting that effects vary somewhat across studies, but overall there's no clear or consistent signal of harm.
 
 # Third Research Question
-
-**Question:** What are the significant associations between individual PFAS and specific health outcomes, and how strong are these correlations?
-
-**Objective:** To determine significant PFAS-health outcome correlations and assess the strength of these relationships.
 
 ```{r, include=FALSE, out.height=600, out.width=1000, fig.width=10, fig.height=7}
 est_dat <- est_dat %>%
@@ -2092,7 +2164,6 @@ ggplot(est_dat, aes(x = chemical_id, y = estimate, ymin = ci.lb, ymax = ci.ub)) 
     legend.position = "none"
   )
 ```
-
 
 
 ```{r, include = FALSE}
@@ -2151,7 +2222,7 @@ result_table <- est_dat_merged %>%
       ),
     
     # Format the p-value (rounded to 3 decimal places)
-    `p value` = format.pval(pval, digits = 3, eps = 0.001)
+    `p value (OR)` = format.pval(pval, digits = 3, eps = 0.001)
   ) %>%
   
   # Select only the columns we want in the final table
@@ -2159,7 +2230,7 @@ result_table <- est_dat_merged %>%
     `Chemical-outcome pair`, 
     `OR [95% CI]`, 
     `I²% [95% CI]`,
-    `p value`
+    `p value (OR)`
   )
 
 # Convert to a flextable
@@ -2167,6 +2238,11 @@ ft <- flextable(result_table) %>%
   theme_zebra() %>%  # Optional: Adds alternating row colors
   autofit()         # Adjusts column widths automatically
 
+ft
+```
+
+
+```{r, eval=FALSE}
 # Save to Word
 save_as_docx(
   ft, 
@@ -2175,7 +2251,7 @@ save_as_docx(
 ```
 
 
-```{r, echo=FALSE, out.height=1200, out.width=1000, fig.width=10, fig.height=10}
+```{r, include=FALSE, out.height=1200, out.width=1000, fig.width=10, fig.height=10}
 ggplot(est_dat_merged, aes(x = estimate, y = I2, label = chemical_id, size = n_es, color = pval < 0.05)) +
   geom_point(alpha = 0.5) +
   geom_text_repel(size = 4, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
@@ -2210,209 +2286,654 @@ ggplot(est_dat_merged, aes(x = estimate, y = I2, label = chemical_id, size = n_e
   )
 ```
 
-```{r, include=FALSE, eval=FALSE}
+```{r, eval=FALSE}
 ggsave(here("figs","fig4.png"),
        width = 7,
        height = 10)
 ```
 
-## Summary Results RQ3
+# AMSTAR2
 
-**1)**  The following combinations of PFAS-health outcomes showed significant associations: 
+```{r, include=FALSE}
+cbp <- c("#588157", "#E6AF2E", "#DE6449", "#B8B8B8")
 
--  PFNA - Diseases related to the perinatal period:
-   estimate = 0.123, CI = [ 0.017, 0.228], p-val = 0.0406, n = 3, k = 4.
--  PFHxS - Diseases of the circulatory system:
-   estimate = 0.032, CI = [0.016, 0.048], p-val = 0.0189, n = 3, k = 5.
--  PFNA - Diseases of the circulatory system:
-   estimate = 0.093, CI = [0.009, 0.177], p-val = 0.0421, n = 3, k = 5.
--  PFOA - Diseases of the circulatory system:
-   estimate = 0.131, CI = [0.075, 0.186], p-val = 0.0134, n = 3, k = 5.
--  PFOS - Diseases of the circulatory system:
-   estimate = 0.172, CI = [0.038, 0.305], p-val = 0.0333, n = 3, k = 5.
--  PFUnDA - Diseases related to pregnancy or childbirth:
-   estimate = -0.136, CI = [-0.229, -0.043], p-val = 0.0263, n = 3, k = 4.
+# Create descriptive question labels (short)
+question_labels <- c(
+  "Q1: Research questions",
+  "Q2: Protocol established", 
+  "Q3: Study designs",
+  "Q4: Literature search",
+  "Q5: Study selection",
+  "Q6: Data extraction", 
+  "Q7: Excluded studies",
+  "Q8: Study descriptions",
+  "Q9: Risk of bias",
+  "Q10: Funding sources",
+  "Q11: Statistical methods",
+  "Q12: Risk of bias impact",
+  "Q13: Risk of bias discussion",
+  "Q14: Heterogeneity",
+  "Q15: Publication bias",
+  "Q16: Conflicts of interest"
+)
+
+# Transform data to long format and categorize scores
+amstar2_long <- amstar2 %>%
+  # Convert to long format
+  pivot_longer(cols = starts_with("Q"), 
+               names_to = "question", 
+               values_to = "score") %>%
+  # Create quality categories
+  mutate(
+    score_word = case_when(
+      score == 1 ~ "High",
+      score == 0.5 ~ "Medium", 
+      score == 0 ~ "Low",
+      is.na(score) ~ "NA",
+      TRUE ~ "NA"
+    ),
+    # Create descriptive question labels
+    label = factor(question, 
+                   levels = paste0("Q", 16:1),
+                   labels = rev(question_labels))
+  ) %>%
+  # Remove rows with missing ma_id if any
+  filter(!is.na(ma_id))
+
+ggplot(data = amstar2_long) +
+  labs(title = expression(bold("AMSTAR-2 Methodological Quality Assessment"))) +
+  geom_bar(mapping = aes(x = label, 
+                         fill = fct_relevel(score_word, c("NA", "Low",
+                               "Medium",
+                               "High"))),
+           alpha = 1,
+           width = 0.8,
+           size = 0.2, 
+           position = "fill",
+           color = "black") + 
+  coord_flip(ylim = c(0, 1)) +
+  guides(fill = guide_legend(reverse = F)) +
+  scale_fill_manual("Methodological quality:",
+                    values = cbp,
+                    breaks = c("High",
+                               "Medium",
+                               "Low",
+                               "NA")) +
+  scale_y_continuous(name = "Percentage of reviews",
+                     labels = scales::percent, 
+                     expand = c(0.02,0)) +
+  scale_x_discrete(name = "AMSTAR-2 Question",
+                   expand = c(0,0)) +
+  theme(axis.title.x = element_text(size = 11),
+            axis.title.y = element_text(size = 11),
+            axis.ticks.y = element_blank(),
+            axis.text.x = element_text(size = 9, 
+                                       color = "black",
+                                       hjust = 0.5),
+            axis.text.y = element_text(size = 9, 
+                                       color = "black",
+                                       vjust = 0.5 ),
+            axis.line.x = element_line(linewidth = 0.5,
+                                       colour = "black", 
+                                       linetype = "solid"),
+            legend.position = "bottom",
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            panel.background = element_blank(),
+            legend.background = element_rect(linetype = "solid", 
+                                             colour = "black",
+                                             size = 0.2),
+            legend.title = element_text(size = 10),
+            legend.key.size = unit(0.5, "cm"),
+            legend.text = element_text(size = 9))
+
+# Function to run sensitivity analysis for one AMSTAR-2 item
+run_sensitivity <- function(data, amstar_col, model_name) {
+  
+  # Filter out studies with score = 0 for this AMSTAR-2 item
+  filtered_data <- data %>%
+    filter(!is.na(!!sym(amstar_col)) & !!sym(amstar_col) != 0)
+  
+  # Check if enough studies remain
+  if(nrow(filtered_data) < 3) {
+    return(tibble(
+      model = model_name,
+      n_studies = nrow(filtered_data),
+      estimate = NA,
+      se = NA,
+      ci_lower = NA,
+      ci_upper = NA,
+      p_value = NA
+    ))
+  }
+  
+  # Recalculate covariance matrix for filtered data
+  VCV_filtered <- impute_covariance_matrix(vi = filtered_data$se^2,  
+                                          cluster = filtered_data$pair,
+                                          r = 0.5)
+  
+  # Run the model
+  tryCatch({
+    mod_sens <- rma.mv(yi = logOR,  
+                      V = VCV_filtered, 
+                      random = list(~1|ma_id, ~1|ma_e_id), 
+                      data = filtered_data,
+                      test = "t")
+    
+    # Extract results
+    tibble(
+      model = model_name,
+      n_studies = nrow(filtered_data),
+      n_excluded = nrow(data) - nrow(filtered_data),
+      estimate = as.numeric(mod_sens$beta),
+      se = mod_sens$se,
+      ci_lower = mod_sens$ci.lb,
+      ci_upper = mod_sens$ci.ub,
+      p_value = mod_sens$pval
+    )
+  }, error = function(e) {
+    tibble(
+      model = model_name,
+      n_studies = nrow(filtered_data),
+      n_excluded = nrow(data) - nrow(filtered_data),
+      estimate = NA,
+      se = NA,
+      ci_lower = NA,
+      ci_upper = NA,
+      p_value = NA
+    )
+  })
+}
+
+# Run sensitivity analysis for all AMSTAR-2 items
+amstar_cols <- paste0("Q", 1:16)
+amstar_labels <- c(
+  "Research questions", "Protocol established", "Study designs",
+  "Literature search", "Study selection", "Data extraction", 
+  "Excluded studies", "Study descriptions", "Risk of bias",
+  "Funding sources", "Statistical methods", "Risk of bias impact",
+  "Risk of bias discussion", "Heterogeneity", "Publication bias",
+  "Conflicts of interest"
+)
+
+# Run all sensitivity analyses
+sensitivity_results <- map2_dfr(amstar_cols, amstar_labels, 
+                               ~run_sensitivity(dat_quant, .x, .y))
+
+# Add original model results for comparison
+original_result <- tibble(
+  model = "Original model",
+  n_studies = nrow(dat_quant),
+  n_excluded = 0,
+  estimate = as.numeric(mod_overall$beta),
+  se = mod_overall$se,
+  ci_lower = mod_overall$ci.lb,
+  ci_upper = mod_overall$ci.ub,
+  p_value = mod_overall$pval
+)
+
+# Combine results and maintain Q1-Q16 order
+all_results <- bind_rows(original_result, sensitivity_results) %>%
+  mutate(
+    model = factor(model, levels = c("Original model", amstar_labels))
+  ) %>%
+  # Reverse order for plotting (since coord_flip will be used)
+  arrange(desc(model))
+
+# Create forest plot
+forest_plot <- ggplot(all_results, aes(y = fct_rev(model))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = original_result$estimate, 
+             linetype = "solid", color = "red", alpha = 0.7, linewidth = 1) +
+  geom_errorbarh(aes(xmin = ci_lower, xmax = ci_upper), 
+                 height = 0.3, linewidth = 0.8) +
+  geom_point(aes(x = estimate), size = 3.5, color = "black") +
+  labs(
+    title = "Sensitivity Analysis: Effect of Excluding Studies with Low AMSTAR-2 Scores",
+    subtitle = "Red vertical line shows original model estimate",
+    x = "Log Odds Ratio (95% CI)",
+    y = "Excluded AMSTAR-2 Criterion"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, color = "gray40"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+
+# Display results
+print("Sensitivity Analysis Results:")
+print(all_results)
+
+# Prepare table for export
+results_table <- all_results %>%
+  arrange(match(model, c("Original model", amstar_labels))) %>%
+  select(model, n_studies, n_excluded, estimate, ci_lower, ci_upper, p_value) %>%
+  mutate(
+    estimate = round(estimate, 3),
+    ci_lower = round(ci_lower, 3),
+    ci_upper = round(ci_upper, 3),
+    p_value = round(p_value, 3),
+    ci_combined = paste0(estimate, " (", ci_lower, ", ", ci_upper, ")")
+  ) %>%
+  select(model, n_studies, n_excluded, ci_combined, p_value) %>%
+  rename(
+    "AMSTAR-2 Criterion" = model,
+    "N Studies" = n_studies,
+    "N Excluded" = n_excluded,
+    "Log OR (95% CI)" = ci_combined,
+    "P-value" = p_value
+  )
+
+# Create flextable
+ft <- flextable(results_table) %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  add_header_lines("AMSTAR-2 Sensitivity Analysis Results") %>%
+  fontsize(size = 10, part = "body") %>%
+  fontsize(size = 11, part = "header") %>%
+  bold(part = "header")
+
+# Save to Word document
+doc <- read_docx()
+doc <- body_add_flextable(doc, ft)
+print(doc, target = here("tabs", "amstar2_sensitivity_results.docx"))
+
+# Display plot
+print(forest_plot)
+
+# Save the plot
+ggsave(here("figs/suppl","fig_s02.png"), 
+       plot = forest_plot, 
+       width = 8, height = 6, 
+       dpi = 300)
+
+# Summary of excluded studies per criterion
+exclusion_summary <- sensitivity_results %>%
+  select(model, n_excluded) %>%
+  arrange(desc(n_excluded))
+
+print("Studies excluded per AMSTAR-2 criterion:")
+print(exclusion_summary)
+```
 
 # Sensitivity Analysis
 
-## Metaregressions
+## Leave one out
 
-Here we run a classic uni-moderator meta-regression analysis to test the robustness of our subgroup analysis:
-
-```{r, include=FALSE}
-dat_quant$chemical_id <- as.factor(dat_quant$chemical_id)
-```
-
-```{r, results=FALSE}
-mod2 <- rma.mv(yi = logOR,
-               V = VCV,
-               mods = ~ chemical_id -1,
-               random = list(~1|ma_id,
-                             ~1|ma_e_id),
-               test = "t",
-               sparse = T,
-               data = dat_quant,
-               control = list(iter.max = 1000,
-                              rel.tol = 1e-8))
-
-summary(mod2)
-```
-
-```{r, echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
-r2_mod2 <- r2_ml(mod2, dat_quant)
-
-k_n_data <- dat_quant %>% 
-  group_by(chemical_id) %>%
-  arrange(chemical_id) %>% 
-  summarise(k = n(), n = length(unique(ma_id)))
-
-res_tab1 <- broom::tidy(mod2)
-res_tab1$ci.lb <- mod2$ci.lb
-res_tab1$ci.ub <- mod2$ci.ub
-res_tab1$pval <-mod2$pval
-res_tab1 <- res_tab1 %>% 
-  mutate(
-    chemical_id = str_remove(term, "^chemical_id"),  # Remove 'Pchemical_id: ' prefix
-  ) %>% 
-  arrange(chemical_id)
-
-res_tab1 <- res_tab1 %>% 
-  left_join(k_n_data, by = "chemical_id")
-
-# Prepare the data for plotting and order chemical_id by estimate value
-plot_data1 <- res_tab1 %>%
-  as.data.frame() %>% 
-  filter(n > 1) %>% 
-  arrange(estimate)
-
-# Create the flipped forest plot
-forest_plot1 <- ggplot(plot_data1, aes(y = reorder(chemical_id, estimate), x = estimate)) +
-  geom_point(aes(size = k),  # Make point size proportional to k
-             color = ifelse(plot_data1$pval > 0.05, "grey", "black"), 
-             alpha = 1) +  # Add transparency for better visibility
-  scale_size(range = c(5, 13)) + # Set minimum size to 3 and maximum to 6
-  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), 
-                 height = 0.2,
-                 alpha = ifelse(plot_data1$pval > 0.05, 0.6, 1)) +  # Horizontal error bars
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line at 1
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = - 0.3),
-            hjust = 0, size = 5, # Add k values as text next to the points
-            fontface = ifelse(plot_data1$pval < 0.05, "bold", "plain")) + 
-  xlab("logOR") +
-  ylab("PFAS") +
-  #ggtitle("B") +
-  theme_minimal() +  # Use a minimal theme
-  annotate(geom = "text",
-           x = -0.15,
-           y = 8, 
-           label = paste0("italic(R)^{2} == ", round(r2_mod2[1],4)),
-           color ="black",
-           parse = TRUE, 
-           size = 5) +
-  labs(caption = "The plot displays only meta-analytic estimates that were pooled from at least two meta-analyses. Black estimates were statistically different from 0.") + 
-  theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-        legend.position = "none",
-        panel.border = element_rect(colour = "black", fill = NA, size = 1),
-         plot.title = element_text(face = "bold", size = 16),
-       legend.title = element_text(size = 14),
-        legend.text = element_text(size = 13),
-        axis.title.x = element_text(size = 16),
-        axis.title.y = element_text(size = 16),
-        axis.text.y = element_text(size = 15),
-       axis.text.x = element_text(size = 15)) # +
-   # scale_x_break(c(4, 6)) +
-   # scale_x_continuous(breaks = seq(0, 4, by = 1), limits = c(-0.21, 4))
-
-forest_plot1
-```
-
-- Now we do the same but using health outcome group as moderator.
-
-```{r, results=FALSE}
-mod4 <- rma.mv(yi = logOR,  
-                  V = VCV,
-                  mods = ~ health_outcome_group -1,
-                   random = list(~1|ma_id,
-                                 ~1|ma_e_id),
-                   test = "t",
-                   sparse = T,
-                   data = dat_quant,
-                   control = list(iter.max = 1000, 
-                                  rel.tol = 1e-8))
-
-summary(mod4)
-```
-
-```{r, echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
-r2_mod4 <- r2_ml(mod4, dat_quant)
-
-k_n_data3 <- dat_quant %>% 
-  group_by(health_outcome_group) %>%
-  arrange(health_outcome_group) %>% 
-  summarise(k = n(), n = length(unique(ma_id)))
-
-res_tab3 <- broom::tidy(mod4)
-res_tab3$ci.lb <- mod4$ci.lb
-res_tab3$ci.ub <- mod4$ci.ub
-res_tab3$pval <- mod4$pval
-res_tab3 <- res_tab3 %>% 
-  mutate(
-    health_outcome_group = str_remove(term, "^health_outcome_group")  # Remove 'health_outcome_group ' prefix
-  ) %>% 
-  arrange(health_outcome_group)
-
-res_tab3 <- res_tab3 %>%
-  left_join(k_n_data3, by = "health_outcome_group")
-
-# Prepare the data for plotting and order health_outcome_group by estimate value
-plot_data3 <- res_tab3 %>%
-  as.data.frame() %>% 
-  #filter(k > 1) %>% 
-  filter(n > 1) %>% 
-  arrange(estimate)
-
-# Create the flipped forest plot
-forest_plot3 <- ggplot(plot_data3, aes(y = reorder(health_outcome_group, estimate), x = estimate)) +
-  geom_point(aes(size = k),  # Make point size proportional to k
-             color = ifelse(plot_data3$pval > 0.05, "grey", "black"),
-             alpha = 1) +  # Add transparency for better visibility 
-  scale_size(range = c(5, 13)) + # Set minimum size to 3 and maximum to 6
-  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), 
-                 height = 0.2,
-                 alpha = ifelse(plot_data3$pval > 0.05, 0.6, 1)) +  # Horizontal error bars
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +  # Reference line at 1
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = - 0.3),
-            hjust = 0, size = 5, # Add k values as text next to the points
-            fontface = ifelse(plot_data3$pval < 0.05, "bold", "plain")) + 
-  xlab("logOR") +
-  ylab("Health Outcome Group") +
-  ggtitle("B") +
-  theme_minimal() +  
-  annotate(geom = "text",
-           x = -0.15,
-           y = 5, 
-           label = paste0("italic(R)^{2} == ", round(r2_mod4[1],4)),
-           color ="black",
-           parse = TRUE, 
-           size = 5) +
-  labs(caption = "The plot displays only meta-analytic estimates that were pooled from at least two meta-analyses. Black estimates were statistically different from 0.") + 
-  theme(plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-    legend.position = "none",
-        panel.border = element_rect(colour = "black", fill = NA, size = 1),
-         plot.title = element_text(face = "bold", size = 18),
-       legend.title = element_text(size = 16),
-        legend.text = element_text(size = 15),
-        axis.title.x = element_text(size = 18),
-        axis.title.y = element_text(size = 18),
-        axis.text.y = element_text(size = 17),
-       axis.text.x = element_text(size = 17)) #+  
-   #scale_x_break(c(4, 6)) +
-   #scale_x_continuous(breaks = seq(0, 4, by = 1), limits = c(-0.21, 4))
+```{r, echo=FALSE}
+# Function to run leave-one-out analysis for one study
+run_loo_sensitivity <- function(data, excluded_ma_id) {
   
-forest_plot3
+  # Filter out the specified study
+  filtered_data <- data %>%
+    filter(ma_id != excluded_ma_id)
+  
+  # Check if enough studies remain
+  if(nrow(filtered_data) < 3) {
+    return(tibble(
+      excluded_study = excluded_ma_id,
+      n_studies = nrow(filtered_data),
+      estimate = NA,
+      se = NA,
+      ci_lower = NA,
+      ci_upper = NA,
+      p_value = NA,
+      tau2 = NA,
+      I2 = NA
+    ))
+  }
+  
+  # Recalculate covariance matrix for filtered data
+  VCV_filtered <- impute_covariance_matrix(vi = filtered_data$se^2,  
+                                          cluster = filtered_data$pair,
+                                          r = 0.5)
+  
+  # Run the model
+  tryCatch({
+    mod_loo <- rma.mv(yi = logOR,  
+                     V = VCV_filtered, 
+                     random = list(~1|ma_id, ~1|ma_e_id), 
+                     data = filtered_data,
+                     test = "t")
+    
+    # Extract results
+    tibble(
+      excluded_study = excluded_ma_id,
+      n_studies = nrow(filtered_data),
+      estimate = as.numeric(mod_loo$beta),
+      se = mod_loo$se,
+      ci_lower = mod_loo$ci.lb,
+      ci_upper = mod_loo$ci.ub,
+      p_value = mod_loo$pval,
+      tau2 = ifelse(length(mod_loo$sigma2) > 0, mod_loo$sigma2[1], NA),
+      I2 = ifelse(!is.null(mod_loo$I2), mod_loo$I2, NA)
+    )
+  }, error = function(e) {
+    tibble(
+      excluded_study = excluded_ma_id,
+      n_studies = nrow(filtered_data),
+      estimate = NA,
+      se = NA,
+      ci_lower = NA,
+      ci_upper = NA,
+      p_value = NA,
+      tau2 = NA,
+      I2 = NA
+    )
+  })
+}
+
+# Get unique studies (ma_id)
+unique_studies <- unique(dat_quant$ma_id)
+
+# Run leave-one-out analysis for all studies
+loo_results <- map_dfr(unique_studies, 
+                      ~run_loo_sensitivity(dat_quant, .x))
+
+# Add original model results for comparison
+original_result <- tibble(
+  excluded_study = "Overall",
+  n_studies = length(unique(dat_quant$ma_id)),
+  estimate = as.numeric(mod_overall$beta),
+  se = mod_overall$se,
+  ci_lower = mod_overall$ci.lb,
+  ci_upper = mod_overall$ci.ub,
+  p_value = mod_overall$pval,
+  tau2 = ifelse(length(mod_overall$sigma2) > 0, mod_overall$sigma2[1], NA),
+  I2 = ifelse(!is.null(mod_overall$I2), mod_overall$I2, NA)
+)
+
+# Combine results and calculate influence metrics
+all_loo_results <- bind_rows(original_result, loo_results) %>%
+  mutate(
+    # Calculate influence as absolute difference from original estimate
+    influence = abs(estimate - original_result$estimate),
+    # Calculate percentage change in tau2
+    tau2_change = ifelse(excluded_study != "Overall", 
+                        (tau2 - original_result$tau2) / original_result$tau2 * 100, 
+                        0),
+    # Create labels for plotting
+    study_label = ifelse(excluded_study == "Overall", 
+                        "Overall Model", 
+                        excluded_study),
+    # Identify influential studies (arbitrary threshold)
+    influential = influence > 0.1 & excluded_study != "Overall"
+  ) %>%
+  # Order by influence for better visualization
+  arrange(desc(influence))
+
+# Create main forest plot (metafor style)
+main_plot <- ggplot(all_loo_results, aes(y = reorder(study_label, influence))) +
+  # Add reference lines
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray60", size = 0.5) +
+  geom_vline(xintercept = original_result$estimate, 
+             linetype = "solid", color = "red", alpha = 0.8, size = 1) +
+  # Add confidence intervals
+  geom_errorbarh(aes(xmin = ci_lower, xmax = ci_upper), 
+                 height = 0.4, size = 0.6, color = "black") +
+  # Add point estimates
+  geom_point(aes(x = estimate, 
+                 fill = ifelse(excluded_study == "Overall", "Overall", 
+                              ifelse(influential, "Influential", "Non-influential")),
+                 shape = ifelse(excluded_study == "Overall", "Overall", "Individual")), 
+             size = 3, stroke = 0.8) +
+  # Customize appearance
+  scale_fill_manual(name = "Study Type",
+                   values = c("Overall" = "red", 
+                             "Influential" = "orange", 
+                             "Non-influential" = "black"),
+                   guide = "none") +
+  scale_shape_manual(name = "Study Type",
+                    values = c("Overall" = 23, "Individual" = 21),
+                    guide = "none") +
+  labs(
+    title = "A. Leave-One-Out Analysis",
+    subtitle = paste0("Effect estimates when excluding individual studies\n",
+                     "Red line: overall estimate (", round(original_result$estimate, 3), ")"),
+    x = "Log Odds Ratio (95% CI)",
+    y = "Study Excluded"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11, color = "gray40"),
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 11),
+    panel.grid.major.x = element_line(color = "gray90", size = 0.3),
+    strip.background = element_blank()
+  )
+
+# Create influence plot
+influence_plot <- ggplot(filter(all_loo_results, excluded_study != "Overall"), 
+                        aes(x = reorder(excluded_study, influence), y = influence)) +
+  geom_col(aes(fill = influential), alpha = 0.7, width = 0.8) +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "red", alpha = 0.6) +
+  scale_fill_manual(values = c("TRUE" = "orange", "FALSE" = "steelblue"),
+                   name = "Influential", guide = "none") +
+  labs(
+    title = "B. Influence Measures",
+    subtitle = "Absolute change in log OR when study excluded",
+    x = "Study Excluded",
+    y = "Influence (|Δ Log OR|)"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, color = "gray40"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 9),
+    axis.title = element_text(size = 10)
+  )
+
+# Create tau2 change plot
+tau2_plot <- ggplot(filter(all_loo_results, excluded_study != "Overall" & !is.na(tau2_change)), 
+                   aes(x = reorder(excluded_study, tau2_change), y = tau2_change)) +
+  geom_col(aes(fill = tau2_change > 0), alpha = 0.7, width = 0.8) +
+  geom_hline(yintercept = 0, color = "black", size = 0.5) +
+  scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "blue"),
+                   name = "Direction", guide = "none") +
+  labs(
+    title = "C. Heterogeneity Changes",
+    subtitle = "Percentage change in τ² when study excluded",
+    x = "Study Excluded",
+    y = "Change in τ² (%)"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, color = "gray40"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 9),
+    axis.title = element_text(size = 10)
+  )
+
+# Combine plots
+combined_plot <- grid.arrange(
+  main_plot, 
+  arrangeGrob(influence_plot, tau2_plot, ncol = 2),
+  nrow = 2,
+  heights = c(2, 1)
+)
+
+# Display results
+print("Leave-One-Out Analysis Results:")
+print(all_loo_results %>% 
+  select(excluded_study, n_studies, estimate, ci_lower, ci_upper, influence) %>%
+  arrange(desc(influence)))
+
+# Display combined plot
+print(combined_plot)
+
+# Save the combined plot
+ggsave(here("figs/suppl","fig_s01.png"), 
+       plot = combined_plot, 
+       width = 12, height = 10, 
+       dpi = 300)
+
+# Save individual plots as well
+# ggsave(here("figs/suppl","fig_s01_forest.png"), 
+#        plot = main_plot, 
+#        width = 10, height = 8, 
+#        dpi = 300)
+
+# Identify most influential studies
+influential_studies <- all_loo_results %>%
+  filter(excluded_study != "Overall") %>%
+  arrange(desc(influence)) %>%
+  slice_head(n = 5) %>%
+  select(excluded_study, estimate, influence, tau2_change)
+
+print("Most influential studies (top 5):")
+print(influential_studies)
+
+# Summary statistics
+cat("\nSummary of Leave-One-Out Analysis:\n")
+cat("Range of estimates:", round(min(loo_results$estimate, na.rm = TRUE), 3), 
+    "to", round(max(loo_results$estimate, na.rm = TRUE), 3), "\n")
+cat("Number of influential studies (influence > 0.1):", 
+    sum(all_loo_results$influential, na.rm = TRUE), "\n")
+cat("Original estimate:", round(original_result$estimate, 3), "\n")
+
+# Save enhanced results table to Word document
+# Prepare enhanced table for export
+enhanced_results_table <- all_loo_results %>%
+  arrange(match(excluded_study, c("Overall", unique_studies))) %>%
+  select(excluded_study, n_studies, estimate, ci_lower, ci_upper, p_value, influence, tau2_change) %>%
+  mutate(
+    estimate = round(estimate, 3),
+    ci_lower = round(ci_lower, 3),
+    ci_upper = round(ci_upper, 3),
+    p_value = round(p_value, 3),
+    influence = round(influence, 3),
+    tau2_change = round(tau2_change, 1),
+    ci_combined = paste0(estimate, " (", ci_lower, ", ", ci_upper, ")")
+  ) %>%
+  select(excluded_study, n_studies, ci_combined, p_value, influence, tau2_change) %>%
+  rename(
+    "Study Excluded" = excluded_study,
+    "N Studies" = n_studies,
+    "Log OR (95% CI)" = ci_combined,
+    "P-value" = p_value,
+    "Influence" = influence,
+    "Δτ² (%)" = tau2_change
+  )
+
+# Create enhanced flextable
+enhanced_ft <- flextable(enhanced_results_table) %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  add_header_lines("Table S2. Enhanced Leave-One-Out Sensitivity Analysis Results") %>%
+  fontsize(size = 10, part = "body") %>%
+  fontsize(size = 11, part = "header") %>%
+  bold(part = "header") %>%
+  # Highlight influential studies
+  bg(i = ~ Influence > 0.1, bg = "#ffeecc", part = "body")
+
+# Create enhanced caption
+enhanced_caption_text <- paste(
+  "Results of leave-one-out sensitivity analyses examining the impact of excluding each meta-analysis individually.",
+  "The overall model includes all meta-analyses.",
+  "Log OR = log odds ratio; CI = confidence interval; Influence = absolute change in log OR when study excluded;",
+  "Δτ² = percentage change in between-study heterogeneity (τ²) when study excluded.",
+  "Studies with influence > 0.1 are highlighted in yellow as potentially influential.",
+  sep = " "
+)
+
+# Save enhanced Word document
+enhanced_doc <- read_docx()
+enhanced_doc <- body_add_flextable(enhanced_doc, enhanced_ft)
+enhanced_doc <- body_add_par(enhanced_doc, enhanced_caption_text, style = "Normal")
+print(enhanced_doc, target = here("tabs", "leave_one_out_enhanced_results.docx"))
 ```
 
 ## Different VCV
 
 cluster VCV over chemical and over health outcome for sensitivity analysis and check convergence of models
 
+```{r, results=FALSE}
+VCV_sa <- impute_covariance_matrix(vi = dat_quant$se^2,  
+                                cluster = dat_quant$pair,
+                                r = 0.8)
+
+mod_sa <- rma.mv(yi = logOR,  
+                        V = VCV_sa, 
+                        random = list(~1|ma_id, 
+                                      ~1|ma_e_id), 
+                        data = dat_quant,
+                        test = "t")
+
+summary(mod_sa)
+```
+
+```{r, echo=FALSE}
+# Create a comparison data frame
+comparison_data <- data.frame(
+  Model = c("Main Model (r = 0.5)", "Sensitivity Analysis (r = 0.8)"),
+  Estimate = c(mod_overall$beta, mod_sa$beta),
+  SE = c(mod_overall$se, mod_sa$se),
+  CI_lower = c(mod_overall$ci.lb, mod_sa$ci.lb),
+  CI_upper = c(mod_overall$ci.ub, mod_sa$ci.ub),
+  P_value = c(mod_overall$pval, mod_sa$pval)
+)
+
+# Convert log OR to OR for easier interpretation (optional)
+comparison_data$OR <- exp(comparison_data$Estimate)
+comparison_data$OR_CI_lower <- exp(comparison_data$CI_lower)
+comparison_data$OR_CI_upper <- exp(comparison_data$CI_upper)
+
+# Create forest plot comparing the two models
+forest_plot <- ggplot(comparison_data, aes(x = Model, y = Estimate)) +
+  geom_point(size = 4, color = "darkblue") +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), 
+                width = 0.2, size = 1, color = "darkblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) +
+  labs(
+    #title = "Sensitivity Analysis: PFAS Exposure and Adverse Health Outcomes",
+    #subtitle = "Comparison of Meta-Analysis Results with Different Correlation Assumptions",
+    x = "Model",
+    y = "Log Odds Ratio (95% CI)",
+    #caption = "Red dashed line represents null effect (log OR = 0)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  coord_flip()
+
+# Create a table with detailed results
+results_table <- comparison_data %>%
+  select(Model, Estimate, SE, CI_lower, CI_upper, P_value) %>%
+  mutate(
+    Estimate = round(Estimate, 3),
+    SE = round(SE, 3),
+    CI_lower = round(CI_lower, 3),
+    CI_upper = round(CI_upper, 3),
+    P_value = ifelse(P_value < 0.001, "<0.001", round(P_value, 3)),
+    `95% CI` = paste0("(", CI_lower, ", ", CI_upper, ")")
+  ) %>%
+  select(Model, Estimate, SE, `95% CI`, P_value)
+
+# Print the table
+print("Model Comparison Results:")
+print(results_table)
+```
+
+```{r, eval=FALSE}
+ggsave(here("figs/suppl","Figure S06.png"),
+       width = 6,
+       height = 6)
+```
