@@ -35,6 +35,8 @@ custom_meta_aggregate_lnH <- function(data, rho = 0.5){
       ci.lb_lnH = mod_rob$ci.lb,
       ci.ub_lnH = mod_rob$ci.ub,
       pval_lnH = mod_rob$pval,
+      tval_lnH = mod_rob$zval,
+      df_lnH = mod_rob$ddf,
       tau2_lnH = tau2_raw,
       I2_lnH = I2_raw,
       CV_lnH = CV_raw
@@ -50,6 +52,8 @@ custom_meta_aggregate_lnH <- function(data, rho = 0.5){
       ci.lb_lnH = est - qnorm(0.975) * se_val,
       ci.ub_lnH = est + qnorm(0.975) * se_val,
       pval_lnH = 2 * (1 - pnorm(abs(est / se_val))),
+      tval_lnH = NA_real_,
+      df_lnH = NA_real_,
       tau2_lnH = NA_real_,
       I2_lnH = NA_real_,
       CV_lnH = NA_real_
@@ -67,6 +71,8 @@ custom_meta_aggregate_lnH <- function(data, rho = 0.5){
       ci.lb_lnH = mod$ci.lb,
       ci.ub_lnH = mod$ci.ub,
       pval_lnH = mod$pval,
+      tval_lnH = NA_real_,
+      df_lnH = NA_real_,
       tau2_lnH = NA_real_,
       I2_lnH = NA_real_,
       CV_lnH = NA_real_
@@ -75,7 +81,7 @@ custom_meta_aggregate_lnH <- function(data, rho = 0.5){
   
   summary_data <- bind_cols(res, n_info) %>%
     mutate(across(where(is.numeric), \(x) round(x, 5))) %>%
-    select(lnH, ci.lb_lnH, ci.ub_lnH, pval_lnH, tau2_lnH, I2_lnH, n_studies_lnH, n_es_lnH, CV_lnH)
+    select(lnH, ci.lb_lnH, ci.ub_lnH, pval_lnH, tval_lnH, df_lnH, tau2_lnH, I2_lnH, n_studies_lnH, n_es_lnH, CV_lnH)
   
   return(summary_data)
 }

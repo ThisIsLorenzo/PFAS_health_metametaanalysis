@@ -35,6 +35,8 @@ custom_meta_aggregate_logOR <- function(data, rho = 0.5){
       ci.lb = mod_rob$ci.lb,
       ci.ub = mod_rob$ci.ub,
       pval = mod_rob$pval,
+      tval = mod_rob$zval,
+      df = mod_rob$ddf,
       tau2 = tau2_raw,
       I2_logOR = I2_raw,
       CV = CV_raw
@@ -50,6 +52,8 @@ custom_meta_aggregate_logOR <- function(data, rho = 0.5){
       ci.lb = est - qnorm(0.975) * se_val,
       ci.ub = est + qnorm(0.975) * se_val,
       pval = 2 * (1 - pnorm(abs(est / se_val))),
+      tval = NA_real_,
+      df = NA_real_,
       tau2 = NA_real_,
       I2_logOR = NA_real_,
       CV = NA_real_
@@ -67,6 +71,8 @@ custom_meta_aggregate_logOR <- function(data, rho = 0.5){
       ci.lb = mod$ci.lb,
       ci.ub = mod$ci.ub,
       pval = mod$pval,
+      tval = NA_real_,
+      df = NA_real_,
       tau2 = NA_real_,
       I2_logOR = NA_real_,
       CV = NA_real_
@@ -75,7 +81,7 @@ custom_meta_aggregate_logOR <- function(data, rho = 0.5){
   
   summary_data <- bind_cols(res, n_info) %>%
     mutate(across(where(is.numeric), \(x) round(x, 5))) %>%
-    select(estimate, ci.lb, ci.ub, pval, tau2, I2_logOR, n_studies, n_es, CV)
+    select(estimate, ci.lb, ci.ub, pval, tval, df, tau2, I2_logOR, n_studies, n_es, CV)
   
   return(summary_data)
 }
