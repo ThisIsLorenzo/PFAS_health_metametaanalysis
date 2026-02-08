@@ -36,13 +36,14 @@ In this analysis workflow, we answer to research question 4 within research ques
 
 # Packages
 
-```{r, results=FALSE, warning=FALSE, message=FALSE}
+```{r , results=FALSE, warning=FALSE, message=FALSE}
 # tidy
 # rm(list=ls())
 # Install and load necessary library
 pacman::p_load(tidyr,
                dplyr,
                here,
+               readr,
                ggplot2,
                gridExtra,
                metafor,
@@ -59,37 +60,38 @@ pacman::p_load(tidyr,
                officer,
                ggExtra,
                forcats
-               )       
+               )
 ```
 
 # Data loading, wrangling and cleaning
 
-```{r, results=FALSE}
+```{r , results=FALSE}
 # Load the 'ma_details' and 'ma_e_details' datasets from the 'data' folder using the 'here' package
 ma_details <- read.csv(here("data/ma_details.csv"))
 ma_e_details <- read.csv(here("data/ma_e_details.csv"))
 amstar2 <- read.csv(here("data/amstar2.csv"))
+ps_details <- read.csv(here("data/ps_details.csv"))
 
 amstar2 <- amstar2 %>%
   # Remove all columns ending with "Comment"
-  select(-ends_with("Comment")) %>%
+  select(-ends_with("Comment")) %>%  # Select columns
   # Rename by extracting question numbers
   rename_with(
     ~ case_when(
       . == "ma_id" ~ "ma_id",
       . == "ma_doi" ~ "ma_doi",
-      str_detect(., "^Q(\\d+)\\.") ~ paste0("Q", str_extract(., "(?<=^Q)\\d+")),
+      str_detect(., "^Q(\\d+)\\.") ~ paste0("Q", str_extract(., "(?<=^Q)\\d+")),  # Detect pattern matches in strings
       TRUE ~ .
     ),
     .cols = everything()
   ) %>% 
-  mutate(across(starts_with("Q"), ~ as.numeric(str_extract(., "^\\d+\\.?\\d*"))))
+  mutate(across(starts_with("Q"), ~ as.numeric(str_extract(., "^\\d+\\.?\\d*"))))  # Create/modify columns
 
 # Creating a data set for qualitative synthesis (i.e., dat_qual)
 # Filter and clean 'ma_e_details', then join with 'ma_details'
 dat_qual <- ma_e_details %>%
   # Keep only rows where chemical class is PFAS
-  filter(chemical_class == "PFAS") %>%
+  filter(chemical_class == "PFAS") %>%  # Filter rows by conditions
   # Standardize naming of effect size measures
   mutate(ma_es_measure = recode(
     ma_es_measure,
@@ -111,13 +113,17 @@ dat_qual <- ma_e_details %>%
   mutate(I_squared = as.numeric(I_squared)) %>%
   #mutate(I_squared = if_else(model == "fixed effects model" & I_squared == 0, NA_real_, I_squared)) %>% 
   # Merging 'ma_details' and 'ma_e_details' using the common key 'ma_id'
-  left_join(ma_details, by = "ma_id", suffix = c("", ".remove")) %>% 
+  left_join(ma_details, by = "ma_id", suffix = c("", ".remove")) %>%  # Join tables keeping all rows from the left table
   select(-ends_with(".remove")) %>% 
   # Removing excluded studies
   filter(status != "excluded") %>% 
   mutate(ma_journal = tolower(ma_journal),
          ma_journal = gsub("^\\s+|\\s+$", "", ma_journal)) %>% 
   left_join(amstar2, by = "ma_id", suffix = c("", ".remove"))
+
+ps_details <- ps_details %>% 
+  filter(chemical_class == "PFAS") %>% 
+  select("ma_e_id", "ma_id", "primary_doi", "chemical")
 ```
 
 # Effect size conversion
@@ -126,7 +132,7 @@ To address the challenge of different effect size metrics reported across the in
 
 This function systematically converted odds ratios, standardized mean differences, risk ratios (with or without baseline risk adjustment), Fisher’s z values, and logistic regression coefficients to lnOR values, based on established methodological approximations (e.g., Borenstein et al. 2021).
 
-```{r, results=FALSE}
+```{r , results=FALSE}
 # Define a conversion function with an optional baseline risk parameter
 convert_to_logOR <- function(effect_measure, point_estimate, ma_l_ci, ma_u_ci, regression_type = NA, baseline_risk = NA) {
   # Ensure the effect measure is treated as character
@@ -194,9 +200,9 @@ convert_to_logOR <- function(effect_measure, point_estimate, ma_l_ci, ma_u_ci, r
 
 # Effect size calculation
 
-```{r, results=FALSE, warning=FALSE}
+```{r , results=FALSE, warning=FALSE}
 # conversion function to transform effect size metrics into logOR
-source(here("function", "conversion.R"))
+source(here("Rdata/functions", "conversion.R"))
 
 # Creating a data set for quantitative synthesis (i.e., dat_quant)
 # Apply conversion to each row
@@ -223,9 +229,9 @@ dat_quant <- dat_qual %>%
 ```
 
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 dat_quant <- dat_quant %>%
-  group_by(chemical_id, health_outcome_group) %>%
+  group_by(chemical_id, health_outcome_group) %>%  # Define grouping structure for summaries
   mutate(
     duplicate_set = paste(chemical_id, health_outcome_group, ma_point_estimate, ma_l_ci, ma_u_ci)
   ) %>%
@@ -238,7 +244,7 @@ dat_quant <- dat_quant %>%
 
 We assessed whether the original effect size metric (ma_es_measure in the following model) influenced the meta-meta-analysis results by including it as a moderator in a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID). 
 
-```{r, include=FALSE, warning=FALSE}
+```{r , include=FALSE, warning=FALSE}
 dat_quant$ma_es_measure <- as.factor(dat_quant$ma_es_measure)
 dat_quant$ma_es_measure <- relevel(dat_quant$ma_es_measure, ref = "Odds ratio")
 
@@ -254,31 +260,44 @@ dat_quant <- dat_quant %>%
 dat_quant <- dat_quant %>% 
   mutate(pair = paste0(health_outcome_group, chemical_id)) # The new variable 'pair' will be used as cluster in the impute_covariance_matrix() function, effectively creating a variance-covariance matrix.
 
-# Create the VCV matrix assuming rho = 0.5 for within-pair correlation
-VCV_test <- impute_covariance_matrix(vi = dat_quant$se^2,  
-                                cluster = dat_quant$pair,
-                                r = 0.5)
+# custom function
+source(here("Rdata/functions", "build_vcv_from_overlap.R"))
 
-mod_test <- rma.mv(yi = logOR,  
-              V = VCV_test, 
-              random = list(~1|ma_id, 
-                            ~1|ma_e_id), 
-              mods = ~ ma_es_measure - 1,
-              data = dat_quant)
-```
+# Build VCV using observed overlap of primary studies (global across all estimates)
+vcv_obj <- build_vcv_from_overlap(
+  dat_sub    = dat_quant,
+  ps_details = ps_details,
+  id_col     = "ma_e_id",
+  vi_col     = "se"
+)
 
-```{r, echo=FALSE, warning=FALSE}
-# Display model results
-summary(mod_test)
+VCV_test <- vcv_obj$V
+dat_quant_test <- vcv_obj$dat_vcv
 ```
 
 
 ```{r, eval=FALSE}
-save(mod_test, file = here("Rdata", "mod_test.RData"))
+mod_test <- rma.mv(yi = logOR,  # Fit a multilevel/multivariate meta-analysis model
+              V = VCV_test, 
+              random = list(~1|ma_id, 
+                            ~1|ma_e_id), 
+              mods = ~ ma_es_measure - 1,
+              data = dat_quant_test,
+              test = "t",
+              sparse = TRUE)
+
+save(mod_test, file = here("Rdata", "models/mod_test.RData"))
 ```
 
-```{r, echo=FALSE, warning=FALSE}
-orchard_plot(
+
+```{r, echo=FALSE}
+load(here("Rdata/models", "mod_test.RData"))
+# Display model results
+summary(mod_test)
+```
+
+```{r , echo=FALSE, warning=FALSE}
+orc_plot_test <- orchard_plot(  # Create an orchard plot for meta-analytic models
   object = mod_test,
   mod = "ma_es_measure",
   group = "ma_id",
@@ -292,17 +311,19 @@ orchard_plot(
     axis.text.x = element_text(size = 10)
   )
 ```
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","Figure S01.png"),
-       width = 6,
+
+```{r, eval=FALSE}
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 1.png"),
+       plot = orc_plot_test,
+       width = 7,
        height = 6)
 ```
 
-The moderator analysis revealed a statistically significant impact of the effect size metric on the overall estimates (p = 0.0003). 
+The moderator analysis revealed a statistically significant impact of the effect size metric on the overall estimates. 
 
 To reduce potential bias and improve consistency, we subsequently restricted the dataset to only those effect sizes that were originally reported on the odds ratio (OR) or log odds ratio (logOR) scale (number of effect sizes: 206, number of meta-analyses: 23).
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 dat_quant <- dat_quant %>% 
   filter(ma_es_measure %in% c("Odds ratio", "log Odds ratio"))
 ```
@@ -316,7 +337,7 @@ pub_year_data <- dat_quant %>%
   distinct(ma_id, .keep_all = TRUE) %>%
   filter(!is.na(pub_year))
 
-ggplot(pub_year_data, aes(x = pub_year)) +
+ggplot(pub_year_data, aes(x = pub_year)) +  # Initialize a ggplot object
   geom_bar(fill = "steelblue") +
   geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.3, size = 3.5) +
   scale_x_continuous(breaks = seq(min(pub_year_data$pub_year, na.rm = TRUE),
@@ -328,7 +349,7 @@ ggplot(pub_year_data, aes(x = pub_year)) +
   theme_minimal()
 ```
 
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 # Plot top journals by count (e.g., top 10)
 journal_data <- dat_quant %>%
   distinct(ma_id, .keep_all = TRUE) %>%
@@ -346,47 +367,19 @@ ggplot(journal_data, aes(x = reorder(ma_journal, n), y = n)) +
   theme_minimal()
 ```
 
-```{r, echo=FALSE}
-# Prepare the data
-chemical_s_data <- dat_quant %>%
-  distinct(ma_id, .keep_all = TRUE) %>%
-  filter(chemical_s %in% c("one", "multiple")) %>%
-  count(chemical_s)
-
-# Create a named vector to improve labels
-pfas_labels <- c("one" = "Single PFAS", "multiple" = "Multiple PFAS")
-
-# Improved plot
-ggplot(chemical_s_data, aes(x = chemical_s, y = n, fill = chemical_s)) +
-  geom_col(width = 0.6, show.legend = FALSE) +
-  geom_text(aes(label = n), vjust = -0.5, size = 5) +
-  scale_x_discrete(labels = pfas_labels) +
-  scale_fill_manual(values = c("one" = "#0072B2", "multiple" = "#D55E00")) +
-  labs(title = "Number of Meta-Analyses by PFAS Scope",
-       x = "PFAS Scope",
-       y = "Number of Meta-Analyses") +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title = element_text(face = "bold", size = 16),
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
-  ylim(0, max(chemical_s_data$n) * 1.1)
-```
-
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 ## Count the number of occurrences of each chemical_id
 chemical_count <- dat_quant %>%
   filter(!is.na(chemical_id) & chemical_id != "") %>% 
   group_by(chemical_id) %>%
-  summarise(
+  summarise(  # Summarise data (often by groups)
     `Number of meta-analyses` = n_distinct(ma_id),
     `Number of health outcomes` = n_distinct(health_outcome_type),
     `Number of health outcome groups` = n_distinct(health_outcome_group),
     `Number of meta-analytic estimates` = sum(!is.na(ma_point_estimate))
   ) %>%
   rename(Chemical = chemical_id) %>%
-  arrange(desc(`Number of meta-analyses`))
+  arrange(desc(`Number of meta-analyses`))  # Sort rows
 
 # Display table with bold caption
 chemical_count %>%
@@ -394,7 +387,7 @@ chemical_count %>%
   kable_styling(full_width = FALSE)
 ```
 
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 ## Count the number of occurrences of each health outcome type
 outcome_type_count <- dat_quant %>%
   filter(!is.na(health_outcome_type) & health_outcome_type != "") %>% 
@@ -413,7 +406,7 @@ outcome_type_count %>%
   kable_styling(full_width = FALSE)
 ```
 
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 ## Count the number of occurrences of each health outcome type
 otucome_group_count <- dat_quant %>%
   filter(!is.na(health_outcome_group) & health_outcome_group != "") %>% 
@@ -432,9 +425,10 @@ otucome_group_count %>%
   kable_styling(full_width = FALSE)
 ```
 
-```{r, include = FALSE}
+```{r , include = FALSE}
 # custom function
-source(here("function", "custom_logOR.R"))
+#source(here("Rdata/functions", "custom_logOR.R"))
+source(here("Rdata/functions", "custom_logOR_new.R"))
 
 # get estimate for each cell
 est_dat <- dat_quant %>% group_by(chemical_id, health_outcome_group) %>%
@@ -449,11 +443,21 @@ est_dat <- dat_quant %>% group_by(chemical_id, health_outcome_group) %>%
     "Symptoms, signs or clinical findings, not elsewhere classified" = "Symptoms not\nelsewhere classified",
     "Diseases of the respiratory system" = "Diseases of the\nrespiratory system",
     "Diseases of the genitourinary system" = "Diseases of the\ngenitourinary system"
-  )) %>% 
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
+  ))
 ```
 
-```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
+```{r, eval= FALSE, include=FALSE}
+est_dat <- est_dat %>% 
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat,
+  file = here("Rdata/data", "est_dat.rds")   # saves est_dat as a single R object
+)
+```
+
+```{r, echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
+est_dat <- readRDS(here("Rdata/data", "est_dat.rds"))  # restores est_dat
 # traditional map with the number of study
 est_dat$chemical_id <- as.factor(est_dat$chemical_id)
 
@@ -492,16 +496,15 @@ Box1_map1 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group_short
          axis.title = element_text(size = 12, face = "bold")) 
 
 Box1_map1
-
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","Figure S02.png"),
+```{r, eval=FALSE, include=FALSE}
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 2.png"),
        width = 8,
        height = 8)
 ```
 
-```{r,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
+```{r ,echo=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=10}
 # traditional map with the number of effect size
 Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group_short, size = n_es)) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[3]) + 
@@ -526,8 +529,8 @@ Box1_map2 <- ggplot(est_dat, aes(x = chemical_id, y = health_outcome_group_short
 Box1_map2
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","Figure S03.png"),
+```{r , include=FALSE, eval=FALSE}
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 3.png"),
        width = 8,
        height = 8)
 ```
@@ -541,9 +544,21 @@ ggsave(here("figs/suppl","Figure S03.png"),
 ```{r, include=FALSE}
 est_dat2 <- dat_quant %>%
   filter(health_outcome_group == "Pregnancy, childbirth or the puerperium")
+```
 
+
+```{r, eval=FALSE, include=FALSE}
 est_dat2 <- est_dat2 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat2,
+  file = here("Rdata/data", "est_dat2.rds")
+)
+```
+
+```{r, include=FALSE}
+est_dat2 <- readRDS(here("Rdata/data", "est_dat2.rds"))  # restores est_dat
 
 est_dat2 <- est_dat2 %>%
   mutate(health_outcome_type_short = recode(health_outcome_type,
@@ -555,9 +570,7 @@ est_dat2 <- est_dat2 %>%
     "infertility"                           = "infertility",
     "miscarriage"                           = "miscarriage"
   ))
-```
 
-```{r,include=FALSE}
 Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type_short, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -580,18 +593,23 @@ Box2_map1 <- ggplot(est_dat2, aes(x = chemical_id, y = health_outcome_type_short
 Box2_map1
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","figXX3.png"),
-       width = 8,
-       height = 6)
-```
-
-```{r, include=FALSE}
+```{r , include=FALSE}
 est_dat3 <- dat_quant %>% 
   filter(health_outcome_group == "Neoplasms")
+```
 
+```{r, eval=FALSE, include=FALSE}
 est_dat3 <- est_dat3 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat3,
+  file = here("Rdata/data", "est_dat3.rds")
+)
+```
+
+```{r ,include=FALSE}
+est_dat3 <- readRDS(here("Rdata/data", "est_dat3.rds"))  
 
 est_dat3 <- est_dat3 %>%
   mutate(health_outcome_type_short = recode(health_outcome_type,
@@ -604,9 +622,7 @@ est_dat3 <- est_dat3 %>%
     "skin cancer"                           = "skin cancer",
     "thyroid cancer"                           = "thyroid cancer"
   ))
-```
 
-```{r,include=FALSE}
 Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type_short, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -629,21 +645,25 @@ Box2_map2 <- ggplot(est_dat3, aes(x = chemical_id, y = health_outcome_type_short
 Box2_map2
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","figXX4.png"),
-       width = 8,
-       height = 6)
+```{r , include=FALSE}
+est_dat4 <- dat_quant %>% 
+  filter(health_outcome_group == "Mental, behavioural or neurodevelopmental disorders")
+```
+
+
+```{r , eval=FALSE, include=FALSE}
+est_dat4 <- est_dat4 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat4,
+  file = here("Rdata/data", "est_dat4.rds")   # saves est_dat as a single R object
+)
 ```
 
 ```{r, include=FALSE}
-est_dat4 <- dat_quant %>% 
-  filter(health_outcome_group == "Mental, behavioural or neurodevelopmental disorders")
+est_dat4 <- readRDS(here("Rdata/data", "est_dat4.rds")) 
 
-est_dat4 <- est_dat4 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
-```
-
-```{r,include=FALSE}
 Box2_map3 <- ggplot(est_dat4, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -666,21 +686,25 @@ Box2_map3 <- ggplot(est_dat4, aes(x = chemical_id, y = health_outcome_type, size
 Box2_map3
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","figXX5.png"),
-       width = 8,
-       height = 6)
-```
-
 ```{r, include=FALSE}
 est_dat5 <- dat_quant %>% 
   filter(health_outcome_group == "Endocrine, nutritional or metabolic diseases")
-
-est_dat5 <- est_dat5 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
 ```
 
-```{r,include=FALSE}
+
+```{r, include=FALSE, eval=FALSE}
+est_dat5 <- est_dat5 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat5,
+  file = here("Rdata/data", "est_dat5.rds")
+)
+```
+
+```{r ,include=FALSE}
+est_dat5 <- readRDS(here("Rdata/data", "est_dat5.rds"))  # restores est_dat
+
 Box2_map4 <- ggplot(est_dat5, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -703,15 +727,24 @@ Box2_map4 <- ggplot(est_dat5, aes(x = chemical_id, y = health_outcome_type, size
 Box2_map4
 ```
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 est_dat6 <- dat_quant %>% 
   filter(health_outcome_group == "Diseases of the circulatory system")
-
-est_dat6 <- est_dat6 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
 ```
 
-```{r,include=FALSE}
+```{r, eval=FALSE, include=FALSE}
+est_dat6 <- est_dat6 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat6,
+  file = here("Rdata/data", "est_dat6.rds")   # saves est_dat as a single R object
+)
+```
+
+```{r, include=FALSE}
+est_dat6 <- readRDS(here("Rdata/data", "est_dat6.rds"))  # restores est_dat
+
 Box2_map5 <- ggplot(est_dat6, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -736,12 +769,21 @@ Box2_map5
 ```{r, include=FALSE}
 est_dat7 <- dat_quant %>% 
   filter(health_outcome_group == "Certain conditions originating in the perinatal period")
-
-est_dat7 <- est_dat7 %>% group_by(chemical_id, health_outcome_type) %>%
-  group_modify(~ custom_meta_aggregate_logOR(.x, rho = 0.5)) %>% ungroup()
 ```
 
-```{r,include=FALSE}
+```{r, eval=FALSE, include=FALSE}
+est_dat7 <- est_dat7 %>% group_by(chemical_id, health_outcome_type) %>%
+  group_modify(~ custom_meta_aggregate_logOR_new(.x, ps_details = ps_details)) %>% ungroup()
+
+saveRDS(
+  est_dat7,
+  file = here("Rdata/data", "est_dat7.rds")   # saves est_dat as a single R object
+)
+```
+
+```{r, include=FALSE}
+est_dat7 <- readRDS(here("Rdata/data", "est_dat7.rds"))  # restores est_dat
+
 Box2_map6 <- ggplot(est_dat7, aes(x = chemical_id, y = health_outcome_type, size = n_studies) ) +
   geom_point(alpha = 0.5, color = RColorBrewer::brewer.pal(n = 8, name = "Dark2")[1]) + 
   labs(x = "PFAS", y = "Health Outcome Type") +
@@ -766,17 +808,18 @@ Box2_map6 <- ggplot(est_dat7, aes(x = chemical_id, y = health_outcome_type, size
 Box2_map6
 ```
 
-
 ```{r, echo=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
-plot_grid(Box2_map1, Box2_map6, Box2_map2, Box2_map3, Box2_map4, Box2_map5, 
+Fig_s4 <- plot_grid(Box2_map1, Box2_map6, Box2_map2, Box2_map3, Box2_map4, Box2_map5, 
           labels = c('A','B','C','D','E','F'),
           label_size = 14,
           nrow = 3,
           ncol = 2)
+Fig_s4
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs/suppl","Figure S04.png"),
+```{r,  eval=FALSE, include=FALSE}
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 4.png"),
+       plot = Fig_s4,
        width = 10,
        height = 14)
 ```
@@ -798,32 +841,110 @@ Random effect structure:
 - **~1 | ma_e_id** introduces a random intercept for each effect size estimate within a meta-analysis. It accounts for non-independence of estimates within the same meta-analysis.
 
 ```{r, results=FALSE}
-VCV <- impute_covariance_matrix(vi = dat_quant$se^2,  
-                                cluster = dat_quant$pair,
-                                r = 0.5)
+# 1) Make sure the estimate id and variances are aligned
+dat_vcv <- dat_quant %>%
+  mutate(
+    estimate_id = ma_e_id,
+    vi = se^2
+  ) %>%
+  arrange(estimate_id) %>%
+  mutate(row_id = row_number())
 
-mod_overall <- rma.mv(yi = logOR,  
-                        V = VCV, 
-                        random = list(~1|ma_id, 
-                                      ~1|ma_e_id), 
-                        data = dat_quant,
-                        test = "t")
+# 2) Build sparse incidence matrix A: (estimate_id x primary_doi)
+ps_long <- ps_details %>%
+  transmute(
+    estimate_id = ma_e_id,
+    primary_doi = primary_doi
+  ) %>%
+  distinct()
 
-I2_logOR <- orchaRd::i2_ml(mod_overall)
-```
+# Keep only DOIs for estimates that are actually in the model dataset
+ps_long <- ps_long %>%
+  semi_join(dat_vcv %>% select(estimate_id), by = "estimate_id")
 
+# Integer indices for sparseMatrix()
+i_idx <- match(ps_long$estimate_id, dat_vcv$estimate_id)
+doi_levels <- sort(unique(ps_long$primary_doi))
+j_idx <- match(ps_long$primary_doi, doi_levels)
 
-```{r, echo=FALSE}
-#mod_overall <- robust(mod_overall, dat_quant$pair) #The robust() function computes robust standard errors that account for non-normality and/or heteroscedasticity in the residuals.
-summary(mod_overall)
+A <- sparseMatrix(
+  i = i_idx,
+  j = j_idx,
+  x = 1,
+  dims = c(nrow(dat_vcv), length(doi_levels)),
+  dimnames = list(dat_vcv$estimate_id, doi_levels)
+)
+
+# 3) Shared primary-study counts (sparse)
+shared <- tcrossprod(A)  # n_ij = number of shared DOIs
+
+# 4) n_i (number of DOIs per estimate)
+n_i <- Matrix::rowSums(A)
+
+# 5) Build rho matrix ONLY where shared > 0 (keep sparse)
+# cosine overlap: rho_ij = n_ij / sqrt(n_i * n_j)
+# We'll compute elementwise on the non-zero entries of `shared`.
+shared_t <- summary(shared)  # triplet form: i, j, x
+
+denom <- sqrt(n_i[shared_t$i] * n_i[shared_t$j])
+rho_x <- ifelse(denom > 0, shared_t$x / denom, 0)
+
+rho <- sparseMatrix(
+  i = shared_t$i,
+  j = shared_t$j,
+  x = rho_x,
+  dims = dim(shared),
+  dimnames = dimnames(shared)
+)
+
+# Ensure diagonal rho = 1 for estimates with >=1 DOI, else 0
+diag(rho) <- ifelse(n_i > 0, 1, 0)
+
+# 6) Convert rho to VCV: V_ij = rho_ij * sqrt(vi_i * vi_j)
+vi <- dat_vcv$vi
+shared_rho_t <- summary(rho)
+
+vcv_x <- shared_rho_t$x * sqrt(vi[shared_rho_t$i] * vi[shared_rho_t$j])
+
+VCV <- sparseMatrix(
+  i = shared_rho_t$i,
+  j = shared_rho_t$j,
+  x = vcv_x,
+  dims = dim(rho),
+  dimnames = dimnames(rho)
+)
+
+# Guarantee exact diagonal equals vi (metafor likes this)
+diag(VCV) <- vi
+
+# (Optional but often good) force symmetry
+VCV <- forceSymmetric(VCV, uplo = "L")
 ```
 
 
 ```{r, eval=FALSE}
-save(mod_test, file = here("Rdata", "mod_test.RData"))
+# 7) Fit model
+mod_overall <- rma.mv(
+  yi = logOR,
+  V  = VCV,
+  random = list(~1 | ma_id,
+                ~1 | ma_e_id),
+  data = dat_vcv,
+  test = "t",
+  sparse = TRUE
+)
+
+save(mod_overall, file = here("Rdata/models", "mod_overall.RData"))
 ```
 
 ```{r, include=FALSE}
+load(here("Rdata/models", "mod_overall.RData"))
+
+summary(mod_overall)
+I2_logOR <- orchaRd::i2_ml(mod_overall)
+```
+
+```{r , include=FALSE}
 # Forest plot logOR
 
 overall_plot_logOR <- dat_quant %>%
@@ -863,11 +984,10 @@ fp_OR <- ggplot(overall_plot_logOR, aes(x = OR, y = ma_e_id)) +
   theme_minimal() +
   theme(panel.grid.major.y = element_blank()) +
   scale_y_discrete(limits = rev(c(levels(overall_plot_logOR$ma_e_id), "Overall")))
-
 ```
 
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 #Extracting data from the model
 overall_results <- tibble(
   lnOR = as.numeric(mod_overall$b),
@@ -877,7 +997,7 @@ overall_results <- tibble(
 )
 ```
 
-```{r, results=FALSE}
+```{r , results=FALSE}
 # 1. Calculate H², lnH², and SElnH
 dat_lnH <- dat_quant %>%
   mutate(k = if_else(is.na(n_ps_e), n_ps, n_ps_e)) %>% #For each row, checks if n_ps_e (i.e., number of primary study estimates) is NA. If it is, replaces it with the value from n_ps (number of primary studies).
@@ -911,12 +1031,68 @@ dat_lnH <- dat_quant %>%
 
 # Create the VCV matrix assuming rho = 0.5 for within-pair correlation
 dat_lnH <- dat_lnH[!is.na(dat_lnH$lnH),]
-VCV_lnH <- impute_covariance_matrix(vi = dat_lnH$SElnH^2,  
-                                   cluster = dat_lnH$pair,
-                                   r = 0.5)
+
+dat_lnH_vcv <- dat_lnH %>%
+  mutate(
+    estimate_id = ma_e_id,
+    vi = SElnH^2
+  ) %>%
+  arrange(estimate_id) %>%
+  mutate(row_id = row_number())
+
+ps_long_lnH <- ps_details %>%
+  transmute(
+    estimate_id = ma_e_id,
+    primary_doi = primary_doi
+  ) %>%
+  distinct() %>%
+  semi_join(dat_lnH_vcv %>% select(estimate_id), by = "estimate_id")
+
+i_idx <- match(ps_long_lnH$estimate_id, dat_lnH_vcv$estimate_id)
+doi_levels <- sort(unique(ps_long_lnH$primary_doi))
+j_idx <- match(ps_long_lnH$primary_doi, doi_levels)
+
+A <- sparseMatrix(
+  i = i_idx,
+  j = j_idx,
+  x = 1,
+  dims = c(nrow(dat_lnH_vcv), length(doi_levels)),
+  dimnames = list(dat_lnH_vcv$estimate_id, doi_levels)
+)
+
+shared <- tcrossprod(A)
+n_i <- Matrix::rowSums(A)
+
+shared_t <- summary(shared)
+denom <- sqrt(n_i[shared_t$i] * n_i[shared_t$j])
+rho_x <- ifelse(denom > 0, shared_t$x / denom, 0)
+
+rho <- sparseMatrix(
+  i = shared_t$i,
+  j = shared_t$j,
+  x = rho_x,
+  dims = dim(shared),
+  dimnames = dimnames(shared)
+)
+
+diag(rho) <- ifelse(n_i > 0, 1, 0)
+
+vi <- dat_lnH_vcv$vi
+rho_t <- summary(rho)
+
+VCV_lnH <- sparseMatrix(
+  i = rho_t$i,
+  j = rho_t$j,
+  x = rho_t$x * sqrt(vi[rho_t$i] * vi[rho_t$j]),
+  dims = dim(rho),
+  dimnames = dimnames(rho)
+)
+
+diag(VCV_lnH) <- vi
+VCV_lnH <- forceSymmetric(VCV_lnH, uplo = "L")
 ```
 
-```{r}
+```{r, eval=FALSE}
 mod_overall_lnH <- rma.mv(
   yi = lnH, 
   V = VCV_lnH, 
@@ -926,100 +1102,98 @@ mod_overall_lnH <- rma.mv(
   test = "t"
 )
 
-summary(mod_overall_lnH)
-
-wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
-df <- cbind(dat_lnH, wi)
-plot(df$lnH, df$wi)
-
-rma.mv(
-  yi = lnH, 
-  V = VCV_lnH, 
-  mods = k,
-  random = list(~1|ma_id,
-                ~1|ma_e_id), 
-  data = dat_lnH,
-  test = "t"
-)
-```
-
-
-```{r, eval=FALSE, warning=FALSE}
-dat <- dat_lnH[!is.na(dat_lnH$lnH),]
-dat <- dat %>% 
-  mutate(I2 = I2/100,
-         I2_ci_lower = I2_ci_lower/100,
-         I2_ci_upper = I2_ci_upper/100) %>%
-  mutate(I2_se = (I2_ci_upper-I2_ci_lower)/(2*1.96))
-  
-
-VCV_lnH_try <- impute_covariance_matrix(vi = dat$I2_se^2,  
-                                   cluster = dat$pair,
-                                   r = 0.5)
-
-mod_overall_lnH_try <- rma.mv(
-  yi = I2, 
-  V = VCV_lnH_try, 
-  random = list(~1|ma_id,
-                ~1|ma_e_id), 
-  data = dat,
-  test = "t"
-)
-
-summary(mod_overall_lnH_try)
-
-wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH_try, type = "diagonal") %>% as.numeric())
-df <- cbind(dat, wi)
-plot(df$I2, df$wi)
-
-
-
-
-mod_overall_lnH <- rma.mv(
-  yi = lnH + 0.01, 
-  V = VCV_lnH, 
-  random = list(~1|ma_id,
-                ~1|ma_e_id), 
-  data = dat,
-  test = "t"
-)
-
-library(car)
-
-dat <- dat %>% mutate(I2_p = I2 / 100,
-                      I2_se_p = I2_se / 100)
-
-mod_overall_lnH <-  rma.mv(
-  yi = I2, 
-  V = I2_se^2, 
-  random = list(~1|ma_id,
-                ~1|ma_e_id), 
-  data = dat,
-  test = "t"
-)
-
-mod_overall_lnH <-  rma.mv(
-  yi = log(I2_p + 0.001), 
-  V = log(I2_se^2 + 0.001), 
-  random = list(~1|ma_id,
-                ~1|ma_e_id), 
-  data = dat,
-  test = "t"
-)
-
-
-
-summary(mod_overall_lnH)
-
-wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
-df <- cbind(dat, wi)
-plot(df$lnH, df$wi)
+save(mod_overall_lnH, file = here("Rdata/models", "mod_overall_lnH.RData"))
 ```
 
 
 ```{r, include=FALSE}
-# Forest plot lnH
+load(here("Rdata/models", "mod_overall_lnH.RData"))
+summary(mod_overall_lnH)
+I2_H2 <- orchaRd::i2_ml(mod_overall_lnH)
+# wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
+# df <- cbind(dat_lnH, wi)
+# plot(df$lnH, df$wi)
+# 
+# rma.mv(
+#   yi = lnH, 
+#   V = VCV_lnH, 
+#   mods = k,
+#   random = list(~1|ma_id,
+#                 ~1|ma_e_id), 
+#   data = dat_lnH,
+#   test = "t"
+# )
+```
 
+
+```{r , eval=FALSE, include=FALSE}
+# dat <- dat_lnH[!is.na(dat_lnH$lnH),]
+# dat <- dat %>% 
+#   mutate(I2 = I2/100,
+#          I2_ci_lower = I2_ci_lower/100,
+#          I2_ci_upper = I2_ci_upper/100) %>%
+#   mutate(I2_se = (I2_ci_upper-I2_ci_lower)/(2*1.96))
+#   
+# VCV_lnH_try <- impute_covariance_matrix(vi = dat$I2_se^2,  
+#                                    cluster = dat$pair,
+#                                    r = 0.5)
+# 
+# mod_overall_lnH_try <- rma.mv(
+#   yi = I2, 
+#   V = VCV_lnH_try, 
+#   random = list(~1|ma_id,
+#                 ~1|ma_e_id), 
+#   data = dat,
+#   test = "t"
+# )
+# 
+# summary(mod_overall_lnH_try)
+# 
+# wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH_try, type = "diagonal") %>% as.numeric())
+# df <- cbind(dat, wi)
+# plot(df$I2, df$wi)
+# 
+# mod_overall_lnH <- rma.mv(
+#   yi = lnH + 0.01, 
+#   V = VCV_lnH, 
+#   random = list(~1|ma_id,
+#                 ~1|ma_e_id), 
+#   data = dat,
+#   test = "t"
+# )
+# 
+# library(car)  # Load the 'car' package
+# 
+# dat <- dat %>% mutate(I2_p = I2 / 100,
+#                       I2_se_p = I2_se / 100)
+# 
+# mod_overall_lnH <-  rma.mv(
+#   yi = I2, 
+#   V = I2_se^2, 
+#   random = list(~1|ma_id,
+#                 ~1|ma_e_id), 
+#   data = dat,
+#   test = "t"
+# )
+# 
+# mod_overall_lnH <-  rma.mv(
+#   yi = log(I2_p + 0.001), 
+#   V = log(I2_se^2 + 0.001), 
+#   random = list(~1|ma_id,
+#                 ~1|ma_e_id), 
+#   data = dat,
+#   test = "t"
+# )
+# 
+# summary(mod_overall_lnH)
+# 
+# wi <- data.frame(wi = weights.rma.mv(mod_overall_lnH, type = "diagonal") %>% as.numeric())
+# df <- cbind(dat, wi)
+# plot(df$lnH, df$wi)
+```
+
+
+```{r , include=FALSE}
 dat_lnH$ma_e_id <- factor(dat_lnH$ma_e_id) 
 dat_lnH <- dat_lnH %>% 
   mutate(
@@ -1044,37 +1218,37 @@ overall_value_I2 <- data.frame(
 ```
 
 
-```{r, include=FALSE}
-fp_lnH <- ggplot(dat_lnH, aes(x = I2, y = ma_e_id)) +
-  geom_point(shape = 18, size = 4) +  # Point estimates
-  geom_errorbarh(aes(xmin = I2_ci_lower, xmax = I2_ci_upper), 
-                 height = 0.2) +      # Confidence intervals
-  geom_vline(xintercept = 50,           # Line at null effect
-             linetype = "dashed", 
-             color = "red") +
-  geom_point(data = overall_value_I2,
-             aes(x = I2, y = ma_e_id),
-             shape = 23, size = 4, fill = "red") +
-  geom_errorbarh(data = overall_value_I2,
-                 aes(xmin = I2_ci_lower, xmax = I2_ci_upper, y = ma_e_id),
-                 height = 0.3, size = 1) +
-  labs(x = "I2", 
-       y = "Meta-analytic estimates",
-       title = "Forest Plot of Heterogeneity") +
-  theme_minimal() +
-  theme(panel.grid.major.y = element_blank()) + # Cleaner horizontal lines
-  scale_y_discrete(limits = rev(c(levels(dat_lnH$ma_e_id), "Overall")))
+```{r , include=FALSE}
+# fp_lnH <- ggplot(dat_lnH, aes(x = I2, y = ma_e_id)) +
+#   geom_point(shape = 18, size = 4) +  # Point estimates
+#   geom_errorbarh(aes(xmin = I2_ci_lower, xmax = I2_ci_upper), 
+#                  height = 0.2) +      # Confidence intervals
+#   geom_vline(xintercept = 50,           # Line at null effect
+#              linetype = "dashed", 
+#              color = "red") +
+#   geom_point(data = overall_value_I2,
+#              aes(x = I2, y = ma_e_id),
+#              shape = 23, size = 4, fill = "red") +
+#   geom_errorbarh(data = overall_value_I2,
+#                  aes(xmin = I2_ci_lower, xmax = I2_ci_upper, y = ma_e_id),
+#                  height = 0.3, size = 1) +
+#   labs(x = "I2", 
+#        y = "Meta-analytic estimates",
+#        title = "Forest Plot of Heterogeneity") +
+#   theme_minimal() +
+#   theme(panel.grid.major.y = element_blank()) + # Cleaner horizontal lines
+#   scale_y_discrete(limits = rev(c(levels(dat_lnH$ma_e_id), "Overall")))
 ```
 
-```{r, include=FALSE}
-plot_grid(fp_OR, fp_lnH, 
-          labels = c('A','B'),
-          label_size = 14,
-          nrow = 1,
-          ncol = 2)
+```{r , include=FALSE}
+# plot_grid(fp_OR, fp_lnH, 
+#           labels = c('A','B'),
+#           label_size = 14,
+#           nrow = 1,
+#           ncol = 2)
 ```
 
-```{r, include=FALSE}
+```{r, results=FALSE}
 #Extracting data from the model
 overall_results_H2 <- tibble(
   lnH = as.numeric(mod_overall_lnH$b),
@@ -1099,116 +1273,113 @@ I2_text <- paste0("I² = ", round(overall_results_H2$I2, 1),
                   "–", round(overall_results_H2$I2_ci_upper, 1), "%]")
 ```
 
-```{r, include=FALSE}
-overall_plot <- orchard_plot(
-  object = mod_overall,
-  group = "ma_id",
-  xlab = "logOR",
-  trunk.size = 0.8,
-  branch.size = 2.5,
-  alpha = 0.8
-) + 
-  scale_fill_manual(values = "#4A90E2") +
-  #scale_colour_manual(values = "black") +
-  annotate(geom = "text",
-           x = 1.3,
-           y = -1, 
-           label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
-           size = 4,
-           color ="black",
-           parse = TRUE)
-
-overall_plot
+```{r , include=FALSE}
+# overall_plot <- orchard_plot(
+#   object = mod_overall,
+#   group = "ma_id",
+#   xlab = "logOR",
+#   trunk.size = 0.8,
+#   branch.size = 2.5,
+#   alpha = 0.8
+# ) + 
+#   scale_fill_manual(values = "#4A90E2") +
+#   #scale_colour_manual(values = "black") +
+#   annotate(geom = "text",
+#            x = 1.3,
+#            y = -1, 
+#            label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
+#            size = 4,
+#            color ="black",
+#            parse = TRUE)
+# 
+# overall_plot
 ```
 
 
-```{r, include=FALSE}
-overall_plot <- orchard_plot(
-  object = mod_overall,
-  group = "ma_id",
-  xlab = "logOR",
-  transfm = "none",
-  trunk.size = 0.8,
-  branch.size = 2.5,
-  alpha = 1,
-  colour = "#4A90E2"
-) + 
-  # # Add faded red background for x < 0
-  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
-  #          fill = "green", alpha = 0.08) + 
-  # # Add faded green background for x > 0
-  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
-  #          fill = "red", alpha = 0.08) + 
-  annotate(geom = "text",
-           x = 1.3,
-           y = -1, 
-           label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
-           size = 4,
-           color ="black",
-           parse = TRUE) +
-  theme(
-    # legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
-    # legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
-    # legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
-    legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
-  )
-
-print(overall_plot)
+```{r , include=FALSE}
+# overall_plot <- orchard_plot(
+#   object = mod_overall,
+#   group = "ma_id",
+#   xlab = "logOR",
+#   transfm = "none",
+#   trunk.size = 0.8,
+#   branch.size = 2.5,
+#   alpha = 1,
+#   colour = "#4A90E2"
+# ) + 
+#   # # Add faded red background for x < 0
+#   # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0, 
+#   #          fill = "green", alpha = 0.08) + 
+#   # # Add faded green background for x > 0
+#   # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = Inf, 
+#   #          fill = "red", alpha = 0.08) + 
+#   annotate(geom = "text",
+#            x = 1.3,
+#            y = -1, 
+#            label = paste0("italic(I)^2 ~ logOR == ", round(I2_logOR[1],1)),
+#            size = 4,
+#            color ="black",
+#            parse = TRUE) +
+#   theme(
+#     # legend.position.inside = c(0.05, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
+#     # legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
+#     # legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
+#     legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
+#   )
+# 
+# print(overall_plot)
 ```
 
-```{r, include=FALSE}
-I2_H2 <- orchaRd::i2_ml(mod_overall_lnH)
-
-overall_plot_H2 <- orchard_plot(
-  object = mod_overall_lnH,
-  group = "ma_id",
-  xlab = "lnH",
-  transfm = "none",
-  trunk.size = 0.8,
-  branch.size = 2.5,
-  alpha = 1
-) + 
-  # Add faded red background for x < 0
-  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0.3466, 
-  #          fill = "green", alpha = 0.08) + 
-  # # Add faded green background for x > 0
-  # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0.3466, ymax = Inf, 
-  #          fill = "red", alpha = 0.08) + 
-  annotate(geom = "text",
-           x = 1.3,
-           y = 2, 
-           label = paste0("italic(I)^2 ~ lnH == ", round(I2_H2[1],1)),
-           size = 4,
-           color ="black",
-           parse = TRUE) +
-  theme(
-    legend.position.inside = c(0.55, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
-    legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
-    legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
-    legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
-  ) + 
-  scale_y_continuous(limits = c(0,1))
- 
-
-print(overall_plot_H2)
+```{r , include=FALSE}
+# overall_plot_H2 <- orchard_plot(
+#   object = mod_overall_lnH,
+#   group = "ma_id",
+#   xlab = "lnH",
+#   transfm = "none",
+#   trunk.size = 0.8,
+#   branch.size = 2.5,
+#   alpha = 1
+# ) + 
+#   # Add faded red background for x < 0
+#   # annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 0.3466, 
+#   #          fill = "green", alpha = 0.08) + 
+#   # # Add faded green background for x > 0
+#   # annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0.3466, ymax = Inf, 
+#   #          fill = "red", alpha = 0.08) + 
+#   annotate(geom = "text",
+#            x = 1.3,
+#            y = 2, 
+#            label = paste0("italic(I)^2 ~ lnH == ", round(I2_H2[1],1)),
+#            size = 4,
+#            color ="black",
+#            parse = TRUE) +
+#   theme(
+#     legend.position.inside = c(0.55, 0.05),  # x, y coordinates relative to the plot (0 = left/bottom, 1 = right/top)
+#     legend.justification = c(0, 0),   # anchor the legend by its bottom-left corner
+#     legend.background = element_rect(fill = alpha("green", 0.001), color = NA),
+#     legend.key = element_rect(fill = "transparent")  # make individual legend keys blend in
+#   ) + 
+#   scale_y_continuous(limits = c(0,1))
+#  
+# print(overall_plot_H2)
 ```
 
-```{r, include=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
-plot_grid(overall_plot, overall_plot_H2, 
-          labels = c('A','B'),
-          label_size = 14,
-          nrow = 2,
-          ncol = 1)
+```{r , include=FALSE, out.height=1000, out.width=1000, fig.width=11, fig.height=12}
+# plot_grid(overall_plot, overall_plot_H2, 
+#           labels = c('A','B'),
+#           label_size = 14,
+#           nrow = 2,
+#           ncol = 1)
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs","fig1.png"),
-       width = 8,
-       height = 6)
+```{r , include=FALSE, eval=FALSE}
+# ggsave(here("figs","fig1.png"),
+#        width = 8,
+#        height = 6)
 ```
 
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 merged_overall_results <- bind_cols(overall_results, overall_results_H2)
 
 ggplot(merged_overall_results, aes(x = lnOR, y = I2)) +
@@ -1233,7 +1404,7 @@ ggplot(merged_overall_results, aes(x = lnOR, y = I2)) +
 ```
 
 
-```{r, include=FALSE}
+```{r , results=FALSE}
 # Prepare merged dataset for plotting (merge OR and I2 data by ma_e_id)
 galaxy_data <- dat_quant %>%
   mutate(
@@ -1301,7 +1472,6 @@ pred_int_I2 <- data.frame(
   I2_pred_upper = pmin(100, pmax(0, (exp(2 * pred_upper_H2[1]) - 1)/exp(2 * pred_upper_H2[1])  * 100)),
   I2 = pmin(100, pmax(0, (exp(2 * mu_lnH[1]) - 1)/exp(2 * mu_lnH[1])  * 100))
 )
-
 ```
 
 
@@ -1431,127 +1601,128 @@ galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/se)) +
         axis.title = element_text(size = 14),
         axis.text = element_text(size = 12))
 
-ggMarginal(galaxy_plot ,
+fig2 <- ggMarginal(galaxy_plot ,
            type = "histogram",
            fill = "#FFC000",
            color = "black",
            alpha = 0.8)
+
+fig2
 ```
 
 ```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs","fig_overall.png"),
+ggsave(here("Rdata/figures","Figure 2.png"),
+       plot = fig2,
        width = 9, height = 7, bg = "white", dpi = 300)
 ```
 
 
-```{r, eval=FALSE}
-galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/I2_se)) +
-  # Individual points (no error bars)
-  geom_point(aes(color = "data"), 
-             shape = 21, 
-             fill = "#4A90E2", 
-             alpha = 0.6) +
-
-  # Overall horizontal error bar (for OR)
-  geom_errorbarh(
-    data = overall_point,
-    aes(xmin = OR_ci_lower, xmax = OR_ci_upper),
-    height = 2, 
-    size = 1.3
-  ) +
-  
-  # Prediction interval (OR)
-  geom_errorbarh(
-    data = pred_int,
-    aes(xmin = OR_pred_lower, xmax = OR_pred_upper, y = overall_point$I2),
-    height = 1.5,
-    color = "black",
-    size = 0.5,
-    linetype = "solid"
-  ) +
-  
-  # Prediction interva; (I-squared)
-  geom_errorbar(
-    data = pred_int_I2,
-    aes(ymin = I2_pred_lower, ymax = I2_pred_upper, x = overall_point$OR),
-    color = "black",
-    width = 0.03, 
-    size = 0.5,
-    linetype = "solid"
-  ) +
-  
-  # Overall vertical error bar (for I2)
-  geom_errorbar(
-    data = overall_point,
-    aes(ymin = I2_ci_lower, ymax = I2_ci_upper),
-    width = 0.03, 
-    size = 1.3
-  ) +
-  
-  # Overall point (diamond)
-  geom_point(
-    data = overall_point,
-    aes(x = OR, y = I2),
-    shape = 23,  # Diamond shape
-    size = 3,
-    fill = "firebrick",
-    color = "black",
-    stroke = 1.2
-  ) +
-  
-  scale_size(range = c(3, 12)) +
-  
-  annotate("text", x = 0, y = 85, label = "negative association\nlow consistency", hjust = 0, size = 4.2) +
-  annotate("text", x = 1.55, y = 85, label = "positive association\nlow consistency", hjust = 0, size = 4.2) +
-  annotate("text", x = 1.55, y = 15, label = "positive association\nhigh consistency", hjust = 0, size = 4.2) +
-  annotate("text", x = 0, y = 15, label = "negative association\nhigh consistency", hjust = 0, size = 4.2) +
-  annotate("text", x = 0.1, y = 60, label = "n = 24\nk = 240", hjust = 0, size = 4.5) +
-
-  # Reference lines
-  geom_vline(xintercept = 1, linetype = "dashed" , color = "firebrick") +
-  geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey40") +
-  geom_vline(xintercept = 1.5, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
-
-  # Axes
-  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.5)) +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
-  scale_color_manual(values = c("data" = "black"),
-                     guide = guide_legend(override.aes = list(fill = NA))) +
-  scale_fill_manual(values = "#4A90E2") +
-  guides(fill = "none", color = "none") +
-
-  # Labels
-  labs(
-    x = "Odds Ratio",
-    y = "Heterogeneity (I\u00b2 %)",
-    size = "Precision (1/SE I\u00b2):"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 12),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
-        axis.title = element_text(size = 14),
-        axis.text = element_text(size = 12))
-
-ggMarginal(galaxy_plot ,
-           type = "histogram",
-           fill = "#FFC000",
-           color = "black")
+```{r, eval=FALSE, include=FALSE}
+# galaxy_plot <- ggplot(galaxy_data, aes(x = OR, y = I2, size = 1/I2_se)) +
+#   # Individual points (no error bars)
+#   geom_point(aes(color = "data"), 
+#              shape = 21, 
+#              fill = "#4A90E2", 
+#              alpha = 0.6) +
+# 
+#   # Overall horizontal error bar (for OR)
+#   geom_errorbarh(
+#     data = overall_point,
+#     aes(xmin = OR_ci_lower, xmax = OR_ci_upper),
+#     height = 2, 
+#     size = 1.3
+#   ) +
+#   
+#   # Prediction interval (OR)
+#   geom_errorbarh(
+#     data = pred_int,
+#     aes(xmin = OR_pred_lower, xmax = OR_pred_upper, y = overall_point$I2),
+#     height = 1.5,
+#     color = "black",
+#     size = 0.5,
+#     linetype = "solid"
+#   ) +
+#   
+#   # Prediction interva; (I-squared)
+#   geom_errorbar(
+#     data = pred_int_I2,
+#     aes(ymin = I2_pred_lower, ymax = I2_pred_upper, x = overall_point$OR),
+#     color = "black",
+#     width = 0.03, 
+#     size = 0.5,
+#     linetype = "solid"
+#   ) +
+#   
+#   # Overall vertical error bar (for I2)
+#   geom_errorbar(
+#     data = overall_point,
+#     aes(ymin = I2_ci_lower, ymax = I2_ci_upper),
+#     width = 0.03, 
+#     size = 1.3
+#   ) +
+#   
+#   # Overall point (diamond)
+#   geom_point(
+#     data = overall_point,
+#     aes(x = OR, y = I2),
+#     shape = 23,  # Diamond shape
+#     size = 3,
+#     fill = "firebrick",
+#     color = "black",
+#     stroke = 1.2
+#   ) +
+#   
+#   scale_size(range = c(3, 12)) +
+#   
+#   annotate("text", x = 0, y = 85, label = "negative association\nlow consistency", hjust = 0, size = 4.2) +
+#   annotate("text", x = 1.55, y = 85, label = "positive association\nlow consistency", hjust = 0, size = 4.2) +
+#   annotate("text", x = 1.55, y = 15, label = "positive association\nhigh consistency", hjust = 0, size = 4.2) +
+#   annotate("text", x = 0, y = 15, label = "negative association\nhigh consistency", hjust = 0, size = 4.2) +
+#   annotate("text", x = 0.1, y = 60, label = "n = 24\nk = 240", hjust = 0, size = 4.5) +
+# 
+#   # Reference lines
+#   geom_vline(xintercept = 1, linetype = "dashed" , color = "firebrick") +
+#   geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey40") +
+#   geom_vline(xintercept = 1.5, linetype = "dashed", color = "grey40") +
+#   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
+#   geom_hline(yintercept = 25, linetype = "dashed", color = "grey40") +
+#   geom_hline(yintercept = 75, linetype = "dashed", color = "grey40") +
+# 
+#   # Axes
+#   scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.5)) +
+#   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
+#   scale_color_manual(values = c("data" = "black"),
+#                      guide = guide_legend(override.aes = list(fill = NA))) +
+#   scale_fill_manual(values = "#4A90E2") +
+#   guides(fill = "none", color = "none") +
+# 
+#   # Labels
+#   labs(
+#     x = "Odds Ratio",
+#     y = "Heterogeneity (I\u00b2 %)",
+#     size = "Precision (1/SE I\u00b2):"
+#   ) +
+#   theme_minimal(base_size = 13) +
+#   theme(legend.position = "bottom",
+#         legend.text = element_text(size = 12),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+#         axis.title = element_text(size = 14),
+#         axis.text = element_text(size = 12))
+# 
+# ggMarginal(galaxy_plot ,
+#            type = "histogram",
+#            fill = "#FFC000",
+#            color = "black")
 ```
-
-
 
 **Figure 1. Overall association and consistency of PFAS-related adverse health outcomes across meta-analyses.**
 *Each blue circle represents the combination of a meta-analytic effect size and associated heterogeneity measure from 23 published meta-analyses on PFAS exposure and human health outcomes. The x-axis shows the pooled odds ratio (OR), where values above 1 indicate increased odds of adverse outcomes. The y-axis depicts heterogeneity (I²), representing the percentage of variation across studies not due to chance. Bubble sizes are scaled by OR’s precision (inverse of standard error), and the colour gradient is according to I²’s imprecision (standard error). The black diamond filled in red indicates the overall pooled estimate from a meta-meta-analysis, with red horizontal and vertical error bars showing its 95% confidence intervals for OR and I², respectively. Grey dashed lines indicate thresholds for heterogeneity and OR. Quadrant annotations help interpret the strength and consistency of associations. The yellow histogram at the top and the yellow histogram on the right represent data distributions of odds ratios and heterogeneity measures, respectively. An explanation for the large number of I2 values at zero is provided in the discussion section.*
 
 
 ```{r, include=FALSE}
-summary_table <- dat_quant %>%
+table1 <- dat_quant %>%
   mutate(n_ps_e = if_else(is.na(n_ps_e), n_ps, n_ps_e)) %>%
   group_by(ma_id) %>%
   summarise(
@@ -1564,13 +1735,20 @@ summary_table <- dat_quant %>%
   )
 ```
 
+```{r, eval=FALSE, include=FALSE}
+write_csv(
+  table1,
+  file = here("Rdata/tables", "Table 1.csv")
+)
+```
+
 # Second Research Question
 
 ## Chemicals
 
 To evaluate chemical-specific associations, we conducted separate multilevel meta-analyses for each chemical. First, we identified all unique chemicals in the dataset and then, for each chemical, filtered the data accordingly. We run the model when at least two meta-analytic estimates contributed data for a given chemical. Using a multilevel meta-analytic model (random effects: meta-analysis ID and effect size ID), I estimated the pooled log odds ratio (logOR), its confidence interval, and p-value. Results were stored in a unified table. If a model failed to converge or insufficient data were available, missing values (NA) were recorded instead. This approach allowed a standardized and robust summary of the strength and variability of associations for each individual chemical.
 
-```{r, results=FALSE, warning=FALSE}
+```{r , results=FALSE, warning=FALSE}
 # Get a list of chemicals
 chemicals <- unique(dat_quant$chemical_id)
 
@@ -1580,10 +1758,16 @@ results_list <- map_dfr(chemicals, function(chem) {
   
   if (n_distinct(dat_sub$ma_e_id) > 1) {  # Require at least 2 meta-analytic estimates
     tryCatch({
-      # Calculate VCV matrix for this subset
-      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
-                                          cluster = dat_sub$pair,
-                                          r = 0.5)
+      # Calculate VCV matrix using shared primary studies
+vcv_obj <- build_vcv_from_overlap(
+  dat_sub = dat_sub,
+  ps_details = ps_details,
+  id_col = "ma_e_id",
+  vi_col = "se"
+)
+
+VCV_sub <- vcv_obj$V
+dat_sub2 <- vcv_obj$dat_vcv  # reordered to match VCV
       
       model <- rma.mv(yi = logOR,  
                       V = VCV_sub,
@@ -1591,7 +1775,7 @@ results_list <- map_dfr(chemicals, function(chem) {
                                     ~1|ma_e_id),
                       test = "t", 
                       sparse = TRUE,
-                      data = dat_sub,
+                      data = dat_sub2,
                       control = list(iter.max = 1000, rel.tol = 1e-8))
       
       # Calculate heterogeneity statistics
@@ -1628,49 +1812,54 @@ results_list <- map_dfr(chemicals, function(chem) {
 ```
 
 ```{r, include=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
-plot_data_chemical <- results_list %>% 
-  filter(!is.na(logOR)) %>% 
+plot_data_chemical <- results_list %>%
+  filter(!is.na(logOR)) %>%
   arrange(logOR)
-
-forest_plot_chemical <- ggplot(plot_data_chemical, aes(y = reorder(chemical_id, logOR), x = logOR)) +
-  geom_point(aes(size = k), 
-             color = ifelse(plot_data_chemical$pval > 0.05, "grey", "black"),
-             alpha = 1) +
-  scale_size(range = c(5, 13)) +
-  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub),
-                 height = 0.2,
-                 alpha = ifelse(plot_data_chemical$pval > 0.05, 0.6, 1)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
-            hjust = 0, size = 5,
-            fontface = ifelse(plot_data_chemical$pval < 0.05, "bold", "plain")) +
-  xlab("logOR") +
-  ylab("PFAS") +
-  theme_minimal() +
-  theme(legend.position = "none",
-        panel.border = element_rect(colour = "black", fill = NA, size = 1),
-        plot.title = element_text(face = "bold", size = 16),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 13),
-        axis.title.x = element_text(size = 16),
-        axis.title.y = element_text(size = 16),
-        axis.text.y = element_text(size = 15),
-        axis.text.x = element_text(size = 15))
-
-forest_plot_chemical
+# 
+# forest_plot_chemical <- ggplot(plot_data_chemical, aes(y = reorder(chemical_id, logOR), x = logOR)) +
+#   geom_point(aes(size = k), 
+#              color = ifelse(plot_data_chemical$pval > 0.05, "grey", "black"),
+#              alpha = 1) +
+#   scale_size(range = c(5, 13)) +
+#   geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub),
+#                  height = 0.2,
+#                  alpha = ifelse(plot_data_chemical$pval > 0.05, 0.6, 1)) +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#   geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
+#             hjust = 0, size = 5,
+#             fontface = ifelse(plot_data_chemical$pval < 0.05, "bold", "plain")) +
+#   xlab("logOR") +
+#   ylab("PFAS") +
+#   theme_minimal() +
+#   theme(legend.position = "none",
+#         panel.border = element_rect(colour = "black", fill = NA, size = 1),
+#         plot.title = element_text(face = "bold", size = 16),
+#         legend.title = element_text(size = 14),
+#         legend.text = element_text(size = 13),
+#         axis.title.x = element_text(size = 16),
+#         axis.title.y = element_text(size = 16),
+#         axis.text.y = element_text(size = 15),
+#         axis.text.x = element_text(size = 15))
+# 
+# forest_plot_chemical
 ```
 
-```{r, results=FALSE, warning=FALSE}
+```{r , results=FALSE, warning=FALSE}
 # Run separate meta-analyses for each chemical_id
 results_list2 <- map_dfr(chemicals, function(chem) {
   dat_sub <- dat_lnH %>% filter(chemical_id == chem)
   
   if (n_distinct(dat_sub$ma_e_id) > 1) {  # Require at least 2 meta-analytic estimates
     tryCatch({
-      # Calculate VCV matrix for this subset
-      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
-                                          cluster = dat_sub$pair,
-                                          r = 0.5)
+      vcv_obj <- build_vcv_from_overlap(
+  dat_sub     = dat_sub,
+  ps_details  = ps_details,
+  id_col      = "ma_e_id",
+  vi_col      = "SElnH"
+)
+
+VCV_sub  <- vcv_obj$V
+dat_sub2 <- vcv_obj$dat_vcv
       
       model <- rma.mv(yi = lnH,  
                       V = VCV_sub,
@@ -1678,7 +1867,7 @@ results_list2 <- map_dfr(chemicals, function(chem) {
                                     ~1|ma_e_id),
                       test = "t", 
                       sparse = TRUE,
-                      data = dat_sub,
+                      data = dat_sub2,
                       control = list(iter.max = 1000, rel.tol = 1e-8))
       
       # Calculate heterogeneity statistics
@@ -1712,7 +1901,7 @@ results_list2 <- map_dfr(chemicals, function(chem) {
 })
 ```
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 custom_order <- c("PFDoDA", "PFUnDA", "PFHpA", "PFDA", "PFAS", "PFNA", "PFOS", "PFHxS", "PFOA", "PFBS")
 
 plot_data_chemical_H2 <- results_list2 %>% 
@@ -1741,20 +1930,19 @@ plot_data_chemical_merged <- left_join(plot_data_chemical, plot_data_chemical_H2
 ```
 
 
-```{r, include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
-forest_plot_chemical <- forest_plot_chemical +
-  geom_text(data = plot_data_chemical_merged,
-            aes(label = paste0(
-              "I² = ", round(I2, 1), "% [", 
-              round(I2_ci_lower, 1), "–", 
-              round(I2_ci_upper, 1), "]")),
-            hjust = -0.2, vjust = -0.7, size = 4.5)
-
-
-forest_plot_chemical
+```{r , include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+# forest_plot_chemical <- forest_plot_chemical +
+#   geom_text(data = plot_data_chemical_merged,
+#             aes(label = paste0(
+#               "I² = ", round(I2, 1), "% [", 
+#               round(I2_ci_lower, 1), "–", 
+#               round(I2_ci_upper, 1), "]")),
+#             hjust = -0.2, vjust = -0.7, size = 4.5)
+# 
+# forest_plot_chemical
 ```
 
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 plot_data_chemical_merged$significant <- plot_data_chemical_merged$pval < 0.05
 
 galaxy_chemicals <- ggplot(plot_data_chemical_merged, 
@@ -1814,12 +2002,6 @@ galaxy_chemicals <- ggplot(plot_data_chemical_merged,
 galaxy_chemicals
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs","fig2.png"),
-       width = 8,
-       height = 6)
-```
-
 *Each estimate is based on a separate meta-analysis for each PFAS chemical.*
 
 ## Health Outcome Group
@@ -1830,7 +2012,7 @@ The meta-analyses included in our study pooled data from studies on various type
 
 Similarly to the previous code, I ran separate multilevel meta-analyses for each health outcome group to assess associations by health outcome. For each group, I filtered the dataset and fitted a random-effects model (with random intercepts for meta-analysis ID and effect size ID) when at least two meta-analytic estimates contributed data. For each health outcome, I estimated the pooled log odds ratio (logOR), its confidence interval, and p-value, recording NA values if model fitting was not possible.
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 dat_quant$health_outcome_group <- as.factor(dat_quant$health_outcome_group)
 
 dat_quant <- dat_quant %>% 
@@ -1848,7 +2030,7 @@ mutate(health_outcome_group = recode(
   ))
 ```
 
-```{r, results=FALSE, warning=FALSE}
+```{r , results=FALSE, warning=FALSE}
 # Get a list of outcome groups
 outcomes <- unique(dat_quant$health_outcome_group)
 
@@ -1859,9 +2041,16 @@ results_health <- map_dfr(outcomes, function(outcome) {
   if (n_distinct(dat_sub$ma_e_id) > 1) { # requires at least 2 meta-analytic estimates
     tryCatch({
       
-      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
-                                          cluster = dat_sub$pair,
-                                          r = 0.5)
+      # Calculate VCV matrix using shared primary studies
+vcv_obj <- build_vcv_from_overlap(
+  dat_sub = dat_sub,
+  ps_details = ps_details,
+  id_col = "ma_e_id",
+  vi_col = "se"
+)
+
+VCV_sub <- vcv_obj$V
+dat_sub2 <- vcv_obj$dat_vcv  # reordered to match VCV
       
       model <- rma.mv(yi = logOR,  
                       V = se^2,
@@ -1869,7 +2058,7 @@ results_health <- map_dfr(outcomes, function(outcome) {
                                     ~1|ma_e_id),
                       test = "t", 
                       sparse = TRUE,
-                      data = dat_sub,
+                      data = dat_sub2,
                       control = list(iter.max = 1000, rel.tol = 1e-8))
       
       # Calculate heterogeneity statistics
@@ -1906,42 +2095,42 @@ results_health <- map_dfr(outcomes, function(outcome) {
 ```
 
 
-```{r, include=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+```{r , include=FALSE, warning=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
 plot_data_health <- results_health %>% 
   filter(!is.na(logOR)) %>% 
   arrange(logOR) %>% 
   filter(n > 1)
 
-forest_plot_health <- ggplot(plot_data_health, aes(y = reorder(health_outcome_group, logOR), x = logOR)) +
-  geom_point(aes(size = k), 
-             color = ifelse(plot_data_health$pval > 0.05, "grey", "black"),
-             alpha = 1) +
-  scale_size(range = c(5, 13)) +
-  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub),
-                 height = 0.2,
-                 alpha = ifelse(plot_data_health$pval > 0.05, 0.6, 1)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
-            hjust = 0, size = 5,
-            fontface = ifelse(plot_data_health$pval < 0.05, "bold", "plain")) +
-  xlab("logOR") +
-  ylab("Health Outcome Group") +
-  theme_minimal() +
-  theme(legend.position = "none",
-        panel.border = element_rect(colour = "black", fill = NA, size = 1),
-        plot.title = element_text(face = "bold", size = 16),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 13),
-        axis.title.x = element_text(size = 16),
-        axis.title.y = element_text(size = 16),
-        axis.text.y = element_text(size = 15),
-        axis.text.x = element_text(size = 15))
-
-forest_plot_health
+# forest_plot_health <- ggplot(plot_data_health, aes(y = reorder(health_outcome_group, logOR), x = logOR)) +
+#   geom_point(aes(size = k), 
+#              color = ifelse(plot_data_health$pval > 0.05, "grey", "black"),
+#              alpha = 1) +
+#   scale_size(range = c(5, 13)) +
+#   geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub),
+#                  height = 0.2,
+#                  alpha = ifelse(plot_data_health$pval > 0.05, 0.6, 1)) +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#   geom_text(aes(label = paste0("k = ", k, " (", n, ")"), x = min(ci.lb, na.rm = TRUE) - 0.2),
+#             hjust = 0, size = 5,
+#             fontface = ifelse(plot_data_health$pval < 0.05, "bold", "plain")) +
+#   xlab("logOR") +
+#   ylab("Health Outcome Group") +
+#   theme_minimal() +
+#   theme(legend.position = "none",
+#         panel.border = element_rect(colour = "black", fill = NA, size = 1),
+#         plot.title = element_text(face = "bold", size = 16),
+#         legend.title = element_text(size = 14),
+#         legend.text = element_text(size = 13),
+#         axis.title.x = element_text(size = 16),
+#         axis.title.y = element_text(size = 16),
+#         axis.text.y = element_text(size = 15),
+#         axis.text.x = element_text(size = 15))
+# 
+# forest_plot_health
 ```
 
 
-```{r, results=FALSE, warning=FALSE}
+```{r , results=FALSE, warning=FALSE}
 dat_lnH <- dat_lnH %>% 
 mutate(health_outcome_group = recode(
     health_outcome_group,
@@ -1966,9 +2155,15 @@ results_health_H2 <- map_dfr(outcomes, function(outcome) {
   if (n_distinct(dat_sub$ma_e_id) > 1) { # requires at least 2 meta-analytic estimates
     tryCatch({
       
-      VCV_sub <- impute_covariance_matrix(vi = dat_sub$se^2,
-                                          cluster = dat_sub$pair,
-                                          r = 0.5)
+      vcv_obj <- build_vcv_from_overlap(
+  dat_sub     = dat_sub,
+  ps_details  = ps_details,
+  id_col      = "ma_e_id",
+  vi_col      = "SElnH"
+)
+
+VCV_sub  <- vcv_obj$V
+dat_sub2 <- vcv_obj$dat_vcv
       
       model <- rma.mv(yi = lnH,  
                       V = VCV_sub,
@@ -1976,7 +2171,7 @@ results_health_H2 <- map_dfr(outcomes, function(outcome) {
                                     ~1|ma_e_id),
                       test = "t", 
                       sparse = TRUE,
-                      data = dat_sub,
+                      data = dat_sub2,
                       control = list(iter.max = 1000, rel.tol = 1e-8))
       
       # Calculate heterogeneity statistics
@@ -2010,7 +2205,7 @@ results_health_H2 <- map_dfr(outcomes, function(outcome) {
 })
 ```
 
-```{r, include=FALSE}
+```{r , include=FALSE}
 custom_order <- c("Neurodevelopmental\ndisorders", "Neoplasms", "Perinatal period", "Pregnancy or\nchildbirth", "Diseases of the\ncirculatory system", "Endocrine diseases")
 
 plot_data_health_H2 <- results_health_H2 %>% 
@@ -2039,20 +2234,19 @@ plot_data_health_merged <- left_join(plot_data_health, plot_data_health_H2 %>%
 ```
 
 
-```{r, include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
-forest_plot_health2 <- forest_plot_health +
-  geom_text(data = plot_data_health_merged,
-            aes(label = paste0(
-              "I² = ", round(I2, 1), "% [", 
-              round(I2_ci_lower, 1), "–", 
-              round(I2_ci_upper, 1), "]")),
-            hjust = -0.2, vjust = -0.7, size = 4.5)
-
-
-forest_plot_health2
+```{r , include=FALSE, out.height=600, out.width=1000, fig.width=11, fig.height=8}
+# forest_plot_health2 <- forest_plot_health +
+#   geom_text(data = plot_data_health_merged,
+#             aes(label = paste0(
+#               "I² = ", round(I2, 1), "% [", 
+#               round(I2_ci_lower, 1), "–", 
+#               round(I2_ci_upper, 1), "]")),
+#             hjust = -0.2, vjust = -0.7, size = 4.5)
+# 
+# forest_plot_health2
 ```
 
-```{r, echo=FALSE}
+```{r , echo=FALSE}
 plot_data_health_merged$significant <- plot_data_health_merged$pval < 0.05
 
 galaxy_health <- ggplot(plot_data_health_merged, 
@@ -2112,7 +2306,7 @@ galaxy_health <- ggplot(plot_data_health_merged,
 galaxy_health
 ```
 
-```{r, include=FALSE}
+```{r, echo=FALSE}
 combined_plot <- plot_grid(galaxy_chemicals, galaxy_health, 
                            #labels = c('A','B'),
                            #label_size = 18,
@@ -2121,7 +2315,7 @@ combined_plot <- plot_grid(galaxy_chemicals, galaxy_health,
                            rel_heights = c(1, 1.5))
 
 # Add a single y-axis label
-ggdraw() + 
+fig3 <- ggdraw() + 
   draw_label("Heterogeneity (I\u00b2 %)",
              x = 0.02, 
              y = 0.6, 
@@ -2133,43 +2327,43 @@ ggdraw() +
             width = 0.95)
 ```
 
-```{r, include=FALSE, eval=FALSE}
-ggsave(here("figs","fig3.png"),
+```{r, eval=FALSE, include=FALSE}
+ggsave(here("Rdata/figures","Figure 3.png"),
+       plot = fig3,
        width = 9, height = 9, bg = "white", dpi = 300)
 ```
 
-
 # Third Research Question
 
-```{r, include=FALSE, out.height=600, out.width=1000, fig.width=10, fig.height=7}
+```{r , include=FALSE, out.height=600, out.width=1000, fig.width=10, fig.height=7}
 est_dat <- est_dat %>%
   filter(n_studies > 1)
 
 # Plot
-ggplot(est_dat, aes(x = chemical_id, y = estimate, ymin = ci.lb, ymax = ci.ub)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.5) +
-  geom_point(aes(color = pval < 0.05), size = 2.5) +
-  geom_errorbar(aes(color = pval < 0.05), width = 0.2) +
-  scale_color_manual(values = c("FALSE" = "grey", "TRUE" = "black"), guide = "none") +
-  facet_wrap(~ health_outcome_group, scales = "free_y") +
-  labs(title = "Estimated Interaction Effects",
-       x = "PFAS",
-       y = "Log Odds Ratio (logOR)") +
-  theme_minimal(base_size = 12) +
-  labs(caption = "The plot displays only meta-analytic estimates that were pooled from at least two meta-analyses. Black estimates were statistically different from 0.") + 
-  theme(
-    plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
-    strip.text = element_text(size = 10, face = "bold"),
-    legend.position = "none"
-  )
+# ggplot(est_dat, aes(x = chemical_id, y = estimate, ymin = ci.lb, ymax = ci.ub)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.5) +
+#   geom_point(aes(color = pval < 0.05), size = 2.5) +
+#   geom_errorbar(aes(color = pval < 0.05), width = 0.2) +
+#   scale_color_manual(values = c("FALSE" = "grey", "TRUE" = "black"), guide = "none") +
+#   facet_wrap(~ health_outcome_group, scales = "free_y") +
+#   labs(title = "Estimated Interaction Effects",
+#        x = "PFAS",
+#        y = "Log Odds Ratio (logOR)") +
+#   theme_minimal(base_size = 12) +
+#   labs(caption = "The plot displays only meta-analytic estimates that were pooled from at least two meta-analyses. Black estimates were statistically different from 0.") + 
+#   theme(
+#     plot.caption = element_text(size = 10, color = "gray10", face = "italic"),
+#     axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+#     strip.text = element_text(size = 10, face = "bold"),
+#     legend.position = "none"
+#   )
 ```
 
 
-```{r, include = FALSE}
+```{r , include = FALSE}
 # custom function
-source(here("function", "custom_lnH.R"))
-
+#source(here("Rdata/functions", "custom_lnH.R"))
+source(here("Rdata/functions", "custom_lnH_new.R"))
 # get estimate for each cell
 est_dat_lnH <- dat_lnH %>% group_by(chemical_id, health_outcome_group) %>%
   mutate(health_outcome_group = recode(
@@ -2184,7 +2378,7 @@ est_dat_lnH <- dat_lnH %>% group_by(chemical_id, health_outcome_group) %>%
     "Diseases of the respiratory system" = "Diseases of the\nrespiratory system",
     "Diseases of the genitourinary system" = "Diseases of the\ngenitourinary system"
   )) %>% 
-  group_modify(~ custom_meta_aggregate_lnH(.x, rho = 0.5)) %>% ungroup() %>%
+  group_modify(~ custom_meta_aggregate_lnH_new(.x, ps_details = ps_details)) %>% ungroup() %>%
   mutate(
     # 1) Compute H2 and its CIs
     H2        = exp(2 * lnH),
@@ -2242,59 +2436,53 @@ ft
 ```
 
 
-```{r, eval=FALSE}
+```{r , eval=FALSE, include=FALSE}
 # Save to Word
 save_as_docx(
   ft, 
-  path = here("tabs", "PFAS_Health_Outcomes_Table.docx")
+  path = here("Rdata/tables", "Supplementary Table 8.docx")
 )
 ```
 
 
-```{r, include=FALSE, out.height=1200, out.width=1000, fig.width=10, fig.height=10}
-ggplot(est_dat_merged, aes(x = estimate, y = I2, label = chemical_id, size = n_es, color = pval < 0.05)) +
-  geom_point(alpha = 0.5) +
-  geom_text_repel(size = 4, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
-  # annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 3) +
-  # annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 3) +
-  # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 3) +
-  # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 3) +
-  scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
-  scale_size(range = c(3, 12)) +
-  scale_x_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
-  labs(
-    x = "Effect size (logOR)",
-    y = "Heterogeneity (I² %)",
-    color = "logOR p < 0.05:",
-    size = "k:"
-  ) +
-  facet_wrap(~ health_outcome_group, scales = "fixed", ncol = 2) +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "bottom",
-    legend.box = "vertical",
-    legend.margin = margin(),
-    panel.grid = element_blank(),
-    strip.text = element_text(face = "bold", size = 11)
-  ) +
-  guides(
-    color = "none",
-    size = guide_legend(override.aes = list(color = "grey50"), order = 2)
-  )
-```
-
-```{r, eval=FALSE}
-ggsave(here("figs","fig4.png"),
-       width = 7,
-       height = 10)
+```{r , include=FALSE, out.height=1200, out.width=1000, fig.width=10, fig.height=10}
+# ggplot(est_dat_merged, aes(x = estimate, y = I2, label = chemical_id, size = n_es, color = pval < 0.05)) +
+#   geom_point(alpha = 0.5) +
+#   geom_text_repel(size = 4, max.overlaps = Inf, box.padding = 1, min.segment.length = 0) +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+#   geom_hline(yintercept = 50, linetype = "dashed", color = "grey40") +
+#   # annotate("text", x = -0.095, y = 95, label = "lack of association\nlow consistency", hjust = 0, size = 3) +
+#   # annotate("text", x = 0.06, y = 95, label = "positive association\nlow consistency", hjust = 0, size = 3) +
+#   # annotate("text", x = 0.06, y = 3, label = "positive association\nhigh consistency", hjust = 0, size = 3) +
+#   # annotate("text", x = -0.095, y = 3, label = "lack of association\nhigh consistency", hjust = 0, size = 3) +
+#   scale_color_manual(values = c("grey50", "firebrick"), labels = c("No", "Yes")) +
+#   scale_size(range = c(3, 12)) +
+#   scale_x_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
+#   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 25)) +
+#   labs(
+#     x = "Effect size (logOR)",
+#     y = "Heterogeneity (I² %)",
+#     color = "logOR p < 0.05:",
+#     size = "k:"
+#   ) +
+#   facet_wrap(~ health_outcome_group, scales = "fixed", ncol = 2) +
+#   theme_minimal(base_size = 13) +
+#   theme(
+#     legend.position = "bottom",
+#     legend.box = "vertical",
+#     legend.margin = margin(),
+#     panel.grid = element_blank(),
+#     strip.text = element_text(face = "bold", size = 11)
+#   ) +
+#   guides(
+#     color = "none",
+#     size = guide_legend(override.aes = list(color = "grey50"), order = 2)
+#   )
 ```
 
 # AMSTAR2
 
-```{r, include=FALSE}
+```{r}
 cbp <- c("#588157", "#E6AF2E", "#DE6449", "#B8B8B8")
 
 # Create descriptive question labels (short)
@@ -2320,7 +2508,7 @@ question_labels <- c(
 # Transform data to long format and categorize scores
 amstar2_long <- amstar2 %>%
   # Convert to long format
-  pivot_longer(cols = starts_with("Q"), 
+  pivot_longer(cols = starts_with("Q"),  # Reshape data from wide to long format
                names_to = "question", 
                values_to = "score") %>%
   # Create quality categories
@@ -2542,17 +2730,22 @@ ft <- flextable(results_table) %>%
 # Save to Word document
 doc <- read_docx()
 doc <- body_add_flextable(doc, ft)
-print(doc, target = here("tabs", "amstar2_sensitivity_results.docx"))
+print(doc, target = here("Rdata/tables", "Supplementary Table 10.docx"))
 
 # Display plot
 print(forest_plot)
+```
 
+
+```{r, eval=FALSE, include=FALSE}
 # Save the plot
-ggsave(here("figs/suppl","fig_s02.png"), 
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 6.png"), 
        plot = forest_plot, 
        width = 8, height = 6, 
        dpi = 300)
+```
 
+```{r , include=FALSE}
 # Summary of excluded studies per criterion
 exclusion_summary <- sensitivity_results %>%
   select(model, n_excluded) %>%
@@ -2566,9 +2759,9 @@ print(exclusion_summary)
 
 ## Leave one out
 
-```{r, echo=FALSE}
+```{r , echo=FALSE, warning=FALSE}
 # Function to run leave-one-out analysis for one study
-run_loo_sensitivity <- function(data, excluded_ma_id) {
+run_loo_sensitivity <- function(data, excluded_ma_id, ps_details) {
   
   # Filter out the specified study
   filtered_data <- data %>%
@@ -2590,22 +2783,29 @@ run_loo_sensitivity <- function(data, excluded_ma_id) {
   }
   
   # Recalculate covariance matrix for filtered data
-  VCV_filtered <- impute_covariance_matrix(vi = filtered_data$se^2,  
-                                          cluster = filtered_data$pair,
-                                          r = 0.5)
-  
+  vcv_obj <- build_vcv_from_overlap(
+  dat_sub    = filtered_data,
+  ps_details = ps_details,
+  id_col     = "ma_e_id",
+  vi_col     = "se"
+)
+
+VCV_filtered <- vcv_obj$V
+filtered_data2 <- vcv_obj$dat_vcv
+
   # Run the model
   tryCatch({
     mod_loo <- rma.mv(yi = logOR,  
                      V = VCV_filtered, 
                      random = list(~1|ma_id, ~1|ma_e_id), 
-                     data = filtered_data,
+                     data = filtered_data2,
                      test = "t")
     
     # Extract results
     tibble(
       excluded_study = excluded_ma_id,
-      n_studies = nrow(filtered_data),
+      k = nrow(filtered_data2),
+n = n_distinct(filtered_data2$ma_id),
       estimate = as.numeric(mod_loo$beta),
       se = mod_loo$se,
       ci_lower = mod_loo$ci.lb,
@@ -2617,7 +2817,8 @@ run_loo_sensitivity <- function(data, excluded_ma_id) {
   }, error = function(e) {
     tibble(
       excluded_study = excluded_ma_id,
-      n_studies = nrow(filtered_data),
+      k = nrow(filtered_data2),
+n = n_distinct(filtered_data2$ma_id),
       estimate = NA,
       se = NA,
       ci_lower = NA,
@@ -2633,8 +2834,10 @@ run_loo_sensitivity <- function(data, excluded_ma_id) {
 unique_studies <- unique(dat_quant$ma_id)
 
 # Run leave-one-out analysis for all studies
-loo_results <- map_dfr(unique_studies, 
-                      ~run_loo_sensitivity(dat_quant, .x))
+loo_results <- map_dfr(
+  unique_studies,
+  ~ run_loo_sensitivity(dat_quant, .x, ps_details = ps_details)
+)
 
 # Add original model results for comparison
 original_result <- tibble(
@@ -2770,9 +2973,12 @@ print(all_loo_results %>%
 
 # Display combined plot
 print(combined_plot)
+```
 
+
+```{r , eval=FALSE, include=FALSE}
 # Save the combined plot
-ggsave(here("figs/suppl","fig_s01.png"), 
+ggsave(here("Rdata/figures/supplements","Supplementary Figure 5.png"), 
        plot = combined_plot, 
        width = 12, height = 10, 
        dpi = 300)
@@ -2782,7 +2988,10 @@ ggsave(here("figs/suppl","fig_s01.png"),
 #        plot = main_plot, 
 #        width = 10, height = 8, 
 #        dpi = 300)
+```
 
+
+```{r, echo=FALSE}
 # Identify most influential studies
 influential_studies <- all_loo_results %>%
   filter(excluded_study != "Overall") %>%
@@ -2852,88 +3061,5 @@ enhanced_caption_text <- paste(
 enhanced_doc <- read_docx()
 enhanced_doc <- body_add_flextable(enhanced_doc, enhanced_ft)
 enhanced_doc <- body_add_par(enhanced_doc, enhanced_caption_text, style = "Normal")
-print(enhanced_doc, target = here("tabs", "leave_one_out_enhanced_results.docx"))
-```
-
-## Different VCV
-
-cluster VCV over chemical and over health outcome for sensitivity analysis and check convergence of models
-
-```{r, results=FALSE}
-VCV_sa <- impute_covariance_matrix(vi = dat_quant$se^2,  
-                                cluster = dat_quant$pair,
-                                r = 0.8)
-
-mod_sa <- rma.mv(yi = logOR,  
-                        V = VCV_sa, 
-                        random = list(~1|ma_id, 
-                                      ~1|ma_e_id), 
-                        data = dat_quant,
-                        test = "t")
-
-summary(mod_sa)
-```
-
-```{r, echo=FALSE}
-# Create a comparison data frame
-comparison_data <- data.frame(
-  Model = c("Main Model (r = 0.5)", "Sensitivity Analysis (r = 0.8)"),
-  Estimate = c(mod_overall$beta, mod_sa$beta),
-  SE = c(mod_overall$se, mod_sa$se),
-  CI_lower = c(mod_overall$ci.lb, mod_sa$ci.lb),
-  CI_upper = c(mod_overall$ci.ub, mod_sa$ci.ub),
-  P_value = c(mod_overall$pval, mod_sa$pval)
-)
-
-# Convert log OR to OR for easier interpretation (optional)
-comparison_data$OR <- exp(comparison_data$Estimate)
-comparison_data$OR_CI_lower <- exp(comparison_data$CI_lower)
-comparison_data$OR_CI_upper <- exp(comparison_data$CI_upper)
-
-# Create forest plot comparing the two models
-forest_plot <- ggplot(comparison_data, aes(x = Model, y = Estimate)) +
-  geom_point(size = 4, color = "darkblue") +
-  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), 
-                width = 0.2, size = 1, color = "darkblue") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) +
-  labs(
-    #title = "Sensitivity Analysis: PFAS Exposure and Adverse Health Outcomes",
-    #subtitle = "Comparison of Meta-Analysis Results with Different Correlation Assumptions",
-    x = "Model",
-    y = "Log Odds Ratio (95% CI)",
-    #caption = "Red dashed line represents null effect (log OR = 0)"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5, size = 12),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 11),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank()
-  ) +
-  coord_flip()
-
-# Create a table with detailed results
-results_table <- comparison_data %>%
-  select(Model, Estimate, SE, CI_lower, CI_upper, P_value) %>%
-  mutate(
-    Estimate = round(Estimate, 3),
-    SE = round(SE, 3),
-    CI_lower = round(CI_lower, 3),
-    CI_upper = round(CI_upper, 3),
-    P_value = ifelse(P_value < 0.001, "<0.001", round(P_value, 3)),
-    `95% CI` = paste0("(", CI_lower, ", ", CI_upper, ")")
-  ) %>%
-  select(Model, Estimate, SE, `95% CI`, P_value)
-
-# Print the table
-print("Model Comparison Results:")
-print(results_table)
-```
-
-```{r, eval=FALSE}
-ggsave(here("figs/suppl","Figure S06.png"),
-       width = 6,
-       height = 6)
+print(enhanced_doc, target = here("Rdata/tables", "Supplementary Table 9.docx"))
 ```
