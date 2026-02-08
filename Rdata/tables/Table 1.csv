@@ -1,0 +1,24 @@
+ma_id,aut_year,info_population,chemical_id,health_outcome_type,n_ps_e
+ma_014,wu_2022,children,"PFOS, PFUnDA, PFOA, PFNA, PFHxS, PFDA",preterm birth,39
+ma_042,liu_2018,,PFOA,risk of overweight,3
+ma_043,cao_2021 ,children,"PFOA, PFOS",low birth weight,12
+ma_044,wang_2022,pregnant women,"PFOA, PFOS, PFHxS, PFNA",gestational diabetes mellitus,28
+ma_046,qu_2021,children,"PFOA, PFOS, PFHxS, PFNA, PFDA",attention deficit hyperactivity disorder (ADHD),27
+ma_047,gao_2021,"children, pregnant women","PFDA, PFHxS, PFNA, PFOA, PFOS, PFOSA-AcOH, PFUnDA, PFHpA","preterm birth, gestational diabetes mellitus, miscarriage, preeclampsia",103
+ma_049,jeddi_2021,adults,"PFOA, PFOS, PFNA, PFHxS",risk of metabolic syndrome,24
+ma_050,luo_2020,children,"PFAS, PFOS, PFHxS, PFNA","asthma, eczema, wheeze, atopic dermatitis, allergic rhinitis",107
+ma_055,jiang_2022,women,"PFOA, PFNA, PFHxS, PFOS",breast cancer,68
+ma_058,yan_2022,pregnant women,"PFHxS, PFDA, PFNA, PFOA, PFOS, PFUnDA, PFBS, PFDoDA",gestational diabetes mellitus,55
+ma_059,wang_2022,women,"PFOA, PFOS, PFNA, PFDA, PFHxS","fecundability, infertility",74
+ma_065,liu_2023a,women,"PFDA, PFDoDA, PFHpA, PFHxS, PFNA, PFOA, PFOS, PFTrDA, PFUnDA",breast cancer,53
+ma_078,yang_2023,children and adults,"PFOA, PFOS, PFHxS, PFNA, PFDA",hypertension,39
+ma_079,hirke_2023,pregnant women,"PFOA, PFOS, PFHxS, PFNA, PFDA, PFHpA, PFUnDA","preeclampsia, gestational hypertension",58
+ma_080,pan_2023,,"PFNA, PFOA, PFOS, PFHxS, PFUnDA",hypertension,85
+ma_082,yipei_2023,,"PFDA, PFHxS, PFNA, PFOA, PFOS",hyperuricemia,27
+ma_088,yang_2024,,"PFAS, PFOA, PFOS, PFNA, PFHxS, PFDA, PFUnDA","risk of total cancer, gastointestinal tract cancer (GIC), genitourinary cancer, breast cancer, thyroid cancer, hematologic cancer, lung cancer, skin cancer",864
+ma_089,cong_2023,,"PFOA, PFOS, PFNA, PFHxS",breast cancer,34
+ma_090,xiao_2023,,"PFOS, PFOA, PFNA, PFHxS",hypertension,50
+ma_092,liu_2024,,"PFOS, PFOA, PFNA, PFHxS, PFDA, PFDoDA, PFHpS, PFHpA, PFUnDA","preterm birth, small for gestational age (SGA), miscarriage",170
+ma_100,khosrojerdi_2024,,"PFOA, PFOS, PFHxS, PFNA",osteoporosis,12
+ma_103,yao_2023,,"PFOA, PFOS, PFNA, PFHxS","attention deficit hyperactivity disorder (ADHD), autismspectrum disorder (ASD)",34
+ma_104,pang_2024,pregnant women,"PFOA, PFOS, PFHxS, PFNA, PFDA, PFBS, PFUnDA, PFDoDA, PFHpA","gestational diabetes mellitus, hypertensive disorders of pregnancy (HDP), gestational hypertension, preeclampsia",186
